@@ -35,7 +35,7 @@ func init() {
 	rootCmd.AddCommand(loginCmd(), logoutCmd(), statusCmd())
 	rootCmd.AddCommand(searchCmd(), describeCmd(), callCmd())
 	rootCmd.AddCommand(applyCmd(), applicationsCmd())
-	// mcp command registered in a later task.
+	rootCmd.AddCommand(mcpCmd())
 }
 
 // resolveFormat parses the global --format flag into an output.Format.
