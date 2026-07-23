@@ -13,9 +13,6 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-// DefaultBaseURL is the public data portal root.
-const DefaultBaseURL = "https://www.data.go.kr"
-
 // DefaultUserAgent identifies the client honestly to the server operator.
 const DefaultUserAgent = "gongctl (+https://github.com/JungHoonGhae/gongctl)"
 
@@ -49,7 +46,7 @@ func WithDelay(d time.Duration) Option {
 // New creates a Client with sane defaults.
 func New(opts ...Option) *Client {
 	c := &Client{
-		baseURL:   DefaultBaseURL,
+		baseURL:   BaseURL,
 		userAgent: DefaultUserAgent,
 		delay:     DefaultDelay,
 		http:      &http.Client{Timeout: 60 * time.Second},

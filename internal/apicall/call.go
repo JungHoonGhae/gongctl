@@ -52,7 +52,10 @@ func Call(ctx context.Context, endpoint string, params map[string]string, key st
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", endpoint, err)
+		// client.Do's *url.Error stringifies with the full request URL
+		// (including serviceKey) — never log or persist a serviceKey, so
+		// build the error from a key-free string rather than %w-wrapping err.
+		return nil, fmt.Errorf("GET %s: %s", endpoint, redactKey(err.Error(), key))
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
@@ -72,6 +75,17 @@ func Call(ctx context.Context, endpoint string, params map[string]string, key st
 			"활용신청 상세의 다른 키(Encoding↔Decoding)로 바꿔 다시 시도하세요")
 	}
 	return res, nil
+}
+
+// redactKey strips a serviceKey from an error string in both its raw and
+// %2B-escaped forms (the two forms Call may have put into the request URL).
+func redactKey(s, key string) string {
+	if key == "" {
+		return s
+	}
+	s = strings.ReplaceAll(s, key, "REDACTED")
+	s = strings.ReplaceAll(s, strings.ReplaceAll(key, "+", "%2B"), "REDACTED")
+	return s
 }
 
 // decodeBody converts the response into a structured value: XML→map, JSON

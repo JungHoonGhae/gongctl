@@ -48,7 +48,7 @@ type emptyIn struct{}
 func New(deps Deps) *mcp.Server {
 	base := deps.BaseURL
 	if base == "" {
-		base = portal.DefaultBaseURL
+		base = portal.BaseURL
 	}
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "gongctl",

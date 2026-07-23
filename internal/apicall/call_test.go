@@ -36,6 +36,22 @@ func TestCallXMLToJSON(t *testing.T) {
 	}
 }
 
+func TestCallDoesNotLeakKeyOnTransportError(t *testing.T) {
+	key := "SECRET+KEY=="
+	escaped := strings.ReplaceAll(key, "+", "%2B")
+
+	_, err := Call(context.Background(), "http://127.0.0.1:1/x", nil, key)
+	if err == nil {
+		t.Fatal("expected transport error, got nil")
+	}
+	if strings.Contains(err.Error(), key) {
+		t.Fatalf("error leaks raw key: %v", err)
+	}
+	if strings.Contains(err.Error(), escaped) {
+		t.Fatalf("error leaks escaped key: %v", err)
+	}
+}
+
 func TestCallServiceKeyHint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
