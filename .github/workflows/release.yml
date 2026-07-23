@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # changelog 생성에 전체 히스토리 필요
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Homebrew tap 푸시 토큰을 Doppler(github-tokens/prd)에서 가져온다.
+      # GitHub 시크릿에는 DOPPLER_TOKEN(서비스 토큰) 하나만 두고, 실제 PAT 은 Doppler 가 보관.
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v4
+
+      - name: Fetch Homebrew tap token
+        id: doppler
+        run: |
+          set -euo pipefail
+          TOKEN=$(doppler secrets get HOMEBREW_TAP_TOKEN --plain)
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+
+      # CHANGELOG.md 의 해당 버전 섹션을 릴리즈 노트로 사용 (없으면 커밋 로그 폴백).
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk "/^## \\[${VERSION}\\]/{flag=1; next} /^## \\[/{flag=0} flag" CHANGELOG.md 2>/dev/null || true)
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${GITHUB_REF_NAME}"
+          fi
+          printf '%s\n' "$NOTES" > /tmp/release-notes.md
+          cat /tmp/release-notes.md
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --release-notes /tmp/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Doppler 에서 가져온 PAT 으로 Homebrew tap(homebrew-gongctl)에 cask 푸시.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.doppler.outputs.token }}
