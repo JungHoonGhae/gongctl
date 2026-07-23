@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/spf13/cobra"
 )
 
@@ -31,4 +32,13 @@ func init() {
 
 	rootCmd.AddCommand(versionCmd())
 	// auth/data/apply/mcp commands registered in later tasks.
+}
+
+// newPortalClient builds a portal HTTP client from the global flags.
+func newPortalClient() *portal.Client {
+	opts := []portal.Option{portal.WithDelay(flagDelay)}
+	if flagBaseURL != "" {
+		opts = append(opts, portal.WithBaseURL(flagBaseURL))
+	}
+	return portal.New(opts...)
 }
