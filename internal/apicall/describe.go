@@ -70,7 +70,20 @@ func Describe(ctx context.Context, baseURL, pk string) (*APISpec, error) {
 	spec.DataName = strings.TrimSpace(doc.Find(".open-api-title, .data-set-title").First().Text())
 	spec.DataName = cleanText(spec.DataName)
 
-	doc.Find(".open-api-detail").Each(func(_ int, sel *goquery.Selection) {
+	// Operation containers: real per-operation content lives in
+	// .open-api-detail-result (endpoint + 요청변수/출력결과 tables). The sibling
+	// .open-api-detail div is only the operation-switcher (<select>+button, no
+	// data) and, on pages with broken/comment-only-closed div nesting, can end
+	// up as the *only* match for .open-api-detail while swallowing unrelated
+	// content via the HTML5 parser's error recovery — so prefer the result
+	// containers whenever the page has any, and only fall back to
+	// .open-api-detail for older/simpler single-operation pages that lack a
+	// separate result div.
+	sections := doc.Find(".open-api-detail-result")
+	if sections.Length() == 0 {
+		sections = doc.Find(".open-api-detail")
+	}
+	sections.Each(func(_ int, sel *goquery.Selection) {
 		op := Operation{Name: cleanText(sel.Find("h4, .tit").First().Text())}
 		if html, err := sel.Html(); err == nil {
 			if m := reEndpoint.FindString(html); m != "" {
@@ -101,19 +114,34 @@ func Describe(ctx context.Context, baseURL, pk string) (*APISpec, error) {
 	return spec, nil
 }
 
-// parseParams reads a 요청변수 table inside an operation section. It only fills
-// params when it finds the exact request-variable header (항목명(영문)); response
-// tables and unknown structures are left to RawHTML.
+// parseParams reads the 요청변수 (request parameter) table inside an operation
+// section. 요청변수 and 출력결과 (response) tables share an identical header row
+// (항목명(영문), ...), so column-header matching alone can't tell them apart —
+// instead this walks headings and tables in document order and only parses a
+// table anchored under the nearest preceding 요청변수/Request Parameter
+// heading, never under 출력결과/Response. Response fields (resultCode,
+// resultMsg, ...) can therefore never be misattributed as request params. If
+// no heading unambiguously marks a table as the request table, it's left to
+// RawHTML rather than guessed.
 func parseParams(sel *goquery.Selection) []Param {
 	var params []Param
-	sel.Find("table").EachWithBreak(func(_ int, tbl *goquery.Selection) bool {
+	heading := ""
+	sel.Find("h4, table").EachWithBreak(func(_ int, node *goquery.Selection) bool {
+		if goquery.NodeName(node) == "h4" {
+			heading = cleanText(node.Text())
+			return true
+		}
+		if !isRequestHeading(heading) {
+			return true // not under a 요청변수 heading (or under 출력결과); keep scanning
+		}
+		tbl := node
 		headers := map[string]int{}
 		tbl.Find("thead th, tr:first-child th").Each(func(i int, th *goquery.Selection) {
 			headers[cleanText(th.Text())] = i
 		})
 		nameCol, ok := colIndex(headers, "항목명(영문)")
 		if !ok {
-			return true // not a request-variable table; keep scanning
+			return true // heading said request, but table shape is unrecognized; keep scanning
 		}
 		reqCol, _ := colIndex(headers, "항목구분")
 		sampleCol, _ := colIndex(headers, "샘플데이터")
@@ -143,6 +171,19 @@ func parseParams(sel *goquery.Selection) []Param {
 		return false // took the first request-variable table
 	})
 	return params
+}
+
+// isRequestHeading reports whether a heading text marks the following table
+// as a 요청변수(Request Parameter) table rather than 출력결과(Response Element).
+func isRequestHeading(h string) bool {
+	if h == "" {
+		return false
+	}
+	lower := strings.ToLower(h)
+	if strings.Contains(h, "출력결과") || strings.Contains(lower, "response") {
+		return false
+	}
+	return strings.Contains(h, "요청변수") || strings.Contains(lower, "request parameter")
 }
 
 func colIndex(headers map[string]int, key string) (int, bool) {

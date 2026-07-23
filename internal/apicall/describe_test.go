@@ -24,25 +24,29 @@ func TestDescribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("describe: %v", err)
 	}
-	if len(spec.Operations) == 0 {
-		t.Fatal("expected at least one operation")
+	// Fixture is a real 2-operation dataset (예비후보자 + 후보자), each with its
+	// own apis.data.go.kr endpoint and a 7-row 요청변수 table. Both must survive
+	// — the operation-switcher box (<select>+button, no data) must NOT show up
+	// as a bogus third operation, and neither real operation may vanish.
+	if len(spec.Operations) != 2 {
+		t.Fatalf("want 2 real operations, got %d: %+v", len(spec.Operations), spec.Operations)
 	}
-	var withEndpoint, withParams int
-	for _, op := range spec.Operations {
-		if strings.Contains(op.Endpoint, "apis.data.go.kr") {
-			withEndpoint++
+	for i, op := range spec.Operations {
+		if !strings.Contains(op.Endpoint, "apis.data.go.kr") {
+			t.Errorf("op %d: expected apis.data.go.kr endpoint, got %q", i, op.Endpoint)
 		}
+		var hasNumOfRows bool
 		for _, p := range op.Params {
 			if p.Name == "numOfRows" {
-				withParams++
+				hasNumOfRows = true
+			}
+			if p.Name == "resultCode" || p.Name == "resultMsg" {
+				t.Errorf("op %d: response-only field %q misattributed as a request param", i, p.Name)
 			}
 		}
-	}
-	if withEndpoint == 0 {
-		t.Error("no operation surfaced an apis.data.go.kr endpoint")
-	}
-	if withParams == 0 {
-		t.Error("expected numOfRows param surfaced in some operation")
+		if !hasNumOfRows {
+			t.Errorf("op %d: expected numOfRows request param surfaced, got %+v", i, op.Params)
+		}
 	}
 }
 
