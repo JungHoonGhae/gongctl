@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/JungHoonGhae/gongctl/internal/output"
 	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,15 @@ func init() {
 	pf.StringVar(&flagBaseURL, "base-url", "", "포털 base URL 재정의 (테스트용)")
 
 	rootCmd.AddCommand(versionCmd())
-	// auth/data/apply/mcp commands registered in later tasks.
+	rootCmd.AddCommand(loginCmd(), logoutCmd(), statusCmd())
+	rootCmd.AddCommand(searchCmd(), describeCmd(), callCmd())
+	rootCmd.AddCommand(applyCmd(), applicationsCmd())
+	// mcp command registered in a later task.
+}
+
+// resolveFormat parses the global --format flag into an output.Format.
+func resolveFormat() (output.Format, error) {
+	return output.Parse(flagFormat)
 }
 
 // newPortalClient builds a portal HTTP client from the global flags.
