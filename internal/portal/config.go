@@ -4,11 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"time"
 )
-
-// DefaultDelay is the minimum spacing between throttled portal requests.
-const DefaultDelay = 700 * time.Millisecond
 
 // Config holds user preferences for the data.go.kr integration.
 type Config struct {

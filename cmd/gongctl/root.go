@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"github.com/JungHoonGhae/gongctl/internal/output"
 	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ CLI 또는 MCP(에이전트)로 처리합니다. 포털 UI를 다시 건드릴 �
 func init() {
 	pf := rootCmd.PersistentFlags()
 	pf.StringVarP(&flagFormat, "format", "f", "json", "출력 형식: json | jsonl | table")
-	pf.DurationVar(&flagDelay, "delay", 700*time.Millisecond, "요청 간 최소 간격 (rate limit)")
+	pf.DurationVar(&flagDelay, "delay", fetch.DefaultDelay, "요청 간 최소 간격 (rate limit)")
 	pf.StringVar(&flagBaseURL, "base-url", "", "포털 base URL 재정의 (테스트용)")
 
 	rootCmd.AddCommand(versionCmd())
@@ -43,11 +44,16 @@ func resolveFormat() (output.Format, error) {
 	return output.Parse(flagFormat)
 }
 
-// newPortalClient builds a portal HTTP client from the global flags.
+// newFetchClient builds the shared HTTP transport from the global flags.
+func newFetchClient() *fetch.Client {
+	return fetch.New(fetch.WithDelay(flagDelay))
+}
+
+// newPortalClient builds a portal search client over the shared transport.
 func newPortalClient() *portal.Client {
-	opts := []portal.Option{portal.WithDelay(flagDelay)}
+	opts := []portal.Option{}
 	if flagBaseURL != "" {
 		opts = append(opts, portal.WithBaseURL(flagBaseURL))
 	}
-	return portal.New(opts...)
+	return portal.New(newFetchClient(), opts...)
 }

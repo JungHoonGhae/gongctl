@@ -16,7 +16,8 @@ search_datasets / list_applications / apply / describe_api / call_api tool 과
 gongctl://guide 리소스로 에이전트가 data.go.kr 을 다룹니다. 로그인 세션 전제.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return mcpserver.Serve(context.Background(), mcpserver.Deps{
-				Portal: newPortalClient(),
+				Fetch:   newFetchClient(),
+				BaseURL: flagBaseURL,
 			})
 		},
 	}

@@ -59,7 +59,7 @@ func describeCmd() *cobra.Command {
 			if base == "" {
 				base = portal.BaseURL
 			}
-			spec, err := apicall.Describe(cmd.Context(), base, args[0])
+			spec, err := apicall.Describe(cmd.Context(), newFetchClient(), base, args[0])
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func callCmd() *cobra.Command {
 				}
 				pm[kv[0]] = kv[1]
 			}
-			res, err := apicall.Call(cmd.Context(), args[0], pm, key)
+			res, err := apicall.Call(cmd.Context(), newFetchClient(), args[0], pm, key)
 			if res != nil {
 				output.WriteJSON(cmd.OutOrStdout(), res)
 			}

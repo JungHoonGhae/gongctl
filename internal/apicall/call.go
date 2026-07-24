@@ -6,10 +6,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"strings"
-	"time"
+
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 )
 
 // CallResult is a surfaced API response. Body is a map (XML→JSON or JSON),
@@ -24,7 +24,7 @@ type CallResult struct {
 // key is used verbatim (data.go.kr's Encoding key is already URL-encoded, so
 // re-encoding it would break it). It never retries: on a well-known key error
 // it returns the body AND an error carrying the Encoding/Decoding hint.
-func Call(ctx context.Context, endpoint string, params map[string]string, key string) (*CallResult, error) {
+func Call(ctx context.Context, f *fetch.Client, endpoint string, params map[string]string, key string) (*CallResult, error) {
 	q := url.Values{}
 	for k, v := range params {
 		q.Set(k, v)
@@ -44,32 +44,20 @@ func Call(ctx context.Context, endpoint string, params map[string]string, key st
 		full += "&" + enc
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	resp, err := f.Get(ctx, full)
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "gongctl (+https://github.com/JungHoonGhae/gongctl)")
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		// client.Do's *url.Error stringifies with the full request URL
-		// (including serviceKey) — never log or persist a serviceKey, so
-		// build the error from a key-free string rather than %w-wrapping err.
-		return nil, fmt.Errorf("GET %s: %s", endpoint, redactKey(err.Error(), key))
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+		// fetch.Get's transport error stringifies with the full request URL
+		// (including serviceKey) — never log or persist a serviceKey, so redact
+		// it (raw and %2B-escaped forms) before surfacing.
+		return nil, fmt.Errorf("call %s: %s", endpoint, redactKey(err.Error(), key))
 	}
 
-	ct := resp.Header.Get("Content-Type")
-	res := &CallResult{Status: resp.StatusCode, ContentType: ct}
-	res.Body = decodeBody(ct, raw)
+	res := &CallResult{Status: resp.Status, ContentType: resp.ContentType}
+	res.Body = decodeBody(resp.ContentType, resp.Body)
 
 	// Error surface: never swallow. If the body signals an unregistered key,
 	// return the surfaced result plus a hint — the Encoding/Decoding trap.
-	if strings.Contains(string(raw), "SERVICE_KEY_IS_NOT_REGISTERED_ERROR") {
+	if strings.Contains(string(resp.Body), "SERVICE_KEY_IS_NOT_REGISTERED_ERROR") {
 		return res, fmt.Errorf("data.go.kr: SERVICE_KEY_IS_NOT_REGISTERED_ERROR — " +
 			"인증키 형태(Encoding/Decoding)가 잘못됐을 수 있습니다. " +
 			"활용신청 상세의 다른 키(Encoding↔Decoding)로 바꿔 다시 시도하세요")
