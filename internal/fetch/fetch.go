@@ -53,9 +53,6 @@ type Option func(*Client)
 // WithUserAgent overrides the User-Agent header.
 func WithUserAgent(ua string) Option { return func(c *Client) { c.userAgent = ua } }
 
-// WithHTTPClient injects a custom *http.Client (timeout, transport, test hooks).
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // WithDelay sets the minimum spacing between requests. Zero disables throttling.
 func WithDelay(d time.Duration) Option {
 	return func(c *Client) {
