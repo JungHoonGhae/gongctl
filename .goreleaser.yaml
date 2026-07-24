@@ -1,0 +1,68 @@
+# goreleaser config — 단일 정적 Go 바이너리(gongctl)용.
+# 태그 푸시(vX.Y.Z) 시 GitHub Actions(release.yml)가 실행 → 크로스플랫폼 바이너리 +
+# 체크섬 + GitHub Release + Homebrew formula(tap 저장소 푸시)를 한 번에 생성.
+version: 2
+
+project_name: gongctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: gongctl
+    main: ./cmd/gongctl
+    binary: gongctl
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/JungHoonGhae/gongctl/internal/version.Version={{ .Version }}
+      - -X github.com/JungHoonGhae/gongctl/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/JungHoonGhae/gongctl/internal/version.Date={{ .Date }}
+
+archives:
+  - id: gongctl
+    name_template: "gongctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "Merge "
+
+# Homebrew Cask → tap 저장소(JungHoonGhae/homebrew-gongctl)에 자동 커밋.
+# 필요: tap 저장소 + 쓰기 권한 토큰(HOMEBREW_TAP_GITHUB_TOKEN 시크릿).
+homebrew_casks:
+  - name: gongctl
+    repository:
+      owner: JungHoonGhae
+      name: homebrew-gongctl
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/JungHoonGhae/gongctl"
+    description: "data.go.kr 활용신청·인증키 발급·API 호출을 AI 에이전트가 대신 — 포털 UI를 사람이 건드릴 필요 없이"
+    # 미서명 바이너리의 macOS Gatekeeper 격리 제거 (없으면 첫 실행이 차단됨).
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gongctl"]
+          end
+
+release:
+  draft: false
+  prerelease: auto
