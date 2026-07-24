@@ -10,8 +10,10 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
   `docs/superpowers/plans/2026-07-23-gongctl-implementation.md`.
 - 구현: `internal/portal`(활용신청 CDP 자동화 이식 + 검색), `internal/apicall`(신규 describe/call),
   `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(11명령: +doctor), goreleaser/CI/install. 테스트 그린.
-- **남은 것 (사용자 액션)**: ① git remote 없음 → GitHub repo 생성. ② release.yml `DOPPLER_TOKEN`
-  + `homebrew-gongctl` tap PAT(첫 v* 태그 전). ③ 스펙 §7 라이브 E2E(실계정 login→apply→call) 미실행.
+- **배포**: GitHub repo 생성·push 완료(github.com/JungHoonGhae/gongctl, public, CI green), tap repo
+  `homebrew-gongctl` 생성, CHANGELOG 0.1.0 추가, goreleaser check·snapshot 통과.
+- **남은 것 (사용자 액션)**: ① `DOPPLER_TOKEN` 시크릿 + Doppler에 `HOMEBREW_TAP_TOKEN`(tap 쓰기 PAT)
+  → 그다음 `git tag v0.1.0 && git push origin v0.1.0`로 첫 릴리즈. ② 쓰기 경로 라이브 E2E(실계정 apply→call).
 - **보안(HIGH, 해결됨)**: `daemon.go`에서 `--remote-allow-origins=*` 제거 — 스파이크
   (`proto/cdp-origin`)로 chromedp가 flag 없이도 재부착됨을 검증(외부 Origin은 Chrome이 403 거부).
   세션탈취 표면 제거. 라이브 E2E에서 재부착 최종 확인만 남음.
