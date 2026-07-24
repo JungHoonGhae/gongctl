@@ -137,7 +137,12 @@ func launchBrowser(startURL string) (*exec.Cmd, error) {
 		"--use-mock-keychain",
 		"--no-first-run",
 		"--no-default-browser-check",
-		"--remote-allow-origins=*",
+		// NOTE: no --remote-allow-origins=*. chromedp attaches without an Origin
+		// header, which Chrome allows by default, so the flag is unnecessary —
+		// and setting it to * would let any local web page open the CDP
+		// WebSocket and hijack the authenticated session (spike-verified:
+		// omitting the flag makes Chrome reject a foreign-Origin WS upgrade with
+		// HTTP 403, while * accepts it with 101). See branch proto/cdp-origin.
 		startURL,
 	}
 	cmd := exec.Command(chrome, args...)

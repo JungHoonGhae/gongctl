@@ -79,15 +79,12 @@ Claude Desktop / 기타 MCP 클라이언트 설정 예시:
 유지하기 위해 그 브라우저를 **백그라운드로 계속 살려둡니다**. 이 프로세스는 gongctl 종료 후에도
 생존하며 인증된 data.go.kr 세션(승인된 API의 serviceKey 열람 가능)을 들고 있습니다.
 
-- 현재 CDP 포트는 loopback에만 바인딩되지만 `--remote-allow-origins=*`로 실행됩니다. 즉 **같은
-  머신의 악성 웹페이지/프로세스**가 `ws://127.0.0.1:9333`에 붙어 세션을 탈취할 수 있습니다
-  (원격 네트워크 공격자는 loopback이라 도달 불가).
-- 공용/다중 사용자 머신에서는 사용을 피하고, 작업이 끝나면 `gongctl logout`으로 세션 브라우저를
-  닫으세요.
+- CDP 포트는 loopback에만 바인딩되며, `--remote-allow-origins`를 **설정하지 않습니다**. 따라서
+  악성 웹페이지가 보내는 Origin 헤더 붙은 WebSocket 연결은 Chrome이 기본 거부합니다(HTTP 403).
+  chromedp는 Origin 없이 붙으므로 재부착에는 영향이 없습니다. (검증: `proto/cdp-origin` 스파이크 —
+  `*`이면 외부 Origin이 101로 수락되지만, 미설정이면 403으로 거부.)
+- 그래도 작업이 끝나면 `gongctl logout`으로 세션 브라우저를 닫는 습관을 권장합니다.
 - 인증키는 gongctl이 로그·파일에 남기지 않습니다(전송 실패 에러 메시지에서도 마스킹).
-
-> 이 origin 정책은 chromedp 재부착 요건에서 비롯된 것으로, 좁히려면 라이브 Chrome 재검증이
-> 필요합니다 — 향후 하드닝 대상입니다.
 
 ## 라이선스
 

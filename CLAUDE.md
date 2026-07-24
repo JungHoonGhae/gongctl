@@ -12,8 +12,9 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
   `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(10명령), goreleaser/CI/install. 테스트 그린.
 - **남은 것 (사용자 액션)**: ① git remote 없음 → GitHub repo 생성. ② release.yml `DOPPLER_TOKEN`
   + `homebrew-gongctl` tap PAT(첫 v* 태그 전). ③ 스펙 §7 라이브 E2E(실계정 login→apply→call) 미실행.
-- **⚠️ 미해결 보안(HIGH, 문서화됨)**: `daemon.go` `--remote-allow-origins=*` 세션탈취 리스크
-  — README 보안섹션 참조. 좁히려면 chromedp 재부착 라이브 재검증 필요.
+- **보안(HIGH, 해결됨)**: `daemon.go`에서 `--remote-allow-origins=*` 제거 — 스파이크
+  (`proto/cdp-origin`)로 chromedp가 flag 없이도 재부착됨을 검증(외부 Origin은 Chrome이 403 거부).
+  세션탈취 표면 제거. 라이브 E2E에서 재부착 최종 확인만 남음.
 
 ## 확정된 핵심 결정 (스펙 요약)
 
@@ -51,9 +52,9 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 
 - `.github/workflows/` 커밋은 git 토큰 **workflow 스코프** 필요(kvote에서 겪음, 해결됨).
 - 이건 fragile scraping — data.go.kr HTML 바뀌면 신청 자동화 깨짐. doctor 류 라이브 점검 필요.
-- **보안(HIGH, 미해결)**: `daemon.go`의 `--remote-allow-origins=*` — 로컬 악성 페이지가
-  CDP 포트(9333)에 붙어 인증 세션·serviceKey 탈취 가능. kvote verbatim 이식이라 유지 중이며
-  README 보안 섹션에 명시. 좁히려면 chromedp 재부착 라이브 재검증 필요(향후 하드닝).
+- **보안(HIGH, 해결됨)**: `daemon.go`에서 `--remote-allow-origins=*` 제거(스파이크
+  `proto/cdp-origin`로 검증 — chromedp는 flag 없이 재부착, 외부 Origin은 Chrome이 403 거부).
+  이전 kvote verbatim 이식이 세션탈취 표면을 열어뒀던 것을 닫음.
 - 배포: goreleaser + Homebrew tap + install.sh/ps1(kvote와 동일). Homebrew cask는 macOS 전용.
 
 ## Agent skills
