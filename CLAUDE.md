@@ -45,6 +45,9 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 
 - `.github/workflows/` 커밋은 git 토큰 **workflow 스코프** 필요(kvote에서 겪음, 해결됨).
 - 이건 fragile scraping — data.go.kr HTML 바뀌면 신청 자동화 깨짐. doctor 류 라이브 점검 필요.
+- **보안(HIGH, 미해결)**: `daemon.go`의 `--remote-allow-origins=*` — 로컬 악성 페이지가
+  CDP 포트(9333)에 붙어 인증 세션·serviceKey 탈취 가능. kvote verbatim 이식이라 유지 중이며
+  README 보안 섹션에 명시. 좁히려면 chromedp 재부착 라이브 재검증 필요(향후 하드닝).
 - 배포: goreleaser + Homebrew tap + install.sh/ps1(kvote와 동일). Homebrew cask는 macOS 전용.
 
 ## Agent skills
