@@ -36,6 +36,7 @@ func init() {
 	rootCmd.AddCommand(loginCmd(), logoutCmd(), statusCmd())
 	rootCmd.AddCommand(searchCmd(), describeCmd(), callCmd())
 	rootCmd.AddCommand(applyCmd(), applicationsCmd())
+	rootCmd.AddCommand(doctorCmd())
 	rootCmd.AddCommand(mcpCmd())
 }
 

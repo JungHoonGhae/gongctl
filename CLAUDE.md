@@ -9,7 +9,7 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 - 설계 스펙: `docs/superpowers/specs/2026-07-08-gongctl-design.md`, 실행계획:
   `docs/superpowers/plans/2026-07-23-gongctl-implementation.md`.
 - 구현: `internal/portal`(활용신청 CDP 자동화 이식 + 검색), `internal/apicall`(신규 describe/call),
-  `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(10명령), goreleaser/CI/install. 테스트 그린.
+  `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(11명령: +doctor), goreleaser/CI/install. 테스트 그린.
 - **남은 것 (사용자 액션)**: ① git remote 없음 → GitHub repo 생성. ② release.yml `DOPPLER_TOKEN`
   + `homebrew-gongctl` tap PAT(첫 v* 태그 전). ③ 스펙 §7 라이브 E2E(실계정 login→apply→call) 미실행.
 - **보안(HIGH, 해결됨)**: `daemon.go`에서 `--remote-allow-origins=*` 제거 — 스파이크
@@ -51,7 +51,8 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 ## 주의
 
 - `.github/workflows/` 커밋은 git 토큰 **workflow 스코프** 필요(kvote에서 겪음, 해결됨).
-- 이건 fragile scraping — data.go.kr HTML 바뀌면 신청 자동화 깨짐. doctor 류 라이브 점검 필요.
+- 이건 fragile scraping — data.go.kr HTML 바뀌면 파서가 조용히 빈 결과. `gongctl doctor`가
+  각 seam(search·describe·applications)을 라이브 호출해 drift를 시끄럽게 감지(CI용 exit 1).
 - **보안(HIGH, 해결됨)**: `daemon.go`에서 `--remote-allow-origins=*` 제거(스파이크
   `proto/cdp-origin`로 검증 — chromedp는 flag 없이 재부착, 외부 Origin은 Chrome이 403 거부).
   이전 kvote verbatim 이식이 세션탈취 표면을 열어뒀던 것을 닫음.
