@@ -52,6 +52,11 @@ gongctl describe <PK>
 gongctl call <endpoint> --key <인증키> --param numOfRows=5
 ```
 
+```bash
+# 스크래핑이 아직 살아있는지 점검 (data.go.kr HTML 변경 감지, CI용 exit 1)
+gongctl doctor -f table
+```
+
 `gongctl status` / `gongctl logout` / `gongctl version`도 있습니다.
 
 ## MCP 서버로 쓰기
