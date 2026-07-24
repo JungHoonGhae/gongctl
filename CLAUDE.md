@@ -46,3 +46,17 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 - `.github/workflows/` 커밋은 git 토큰 **workflow 스코프** 필요(kvote에서 겪음, 해결됨).
 - 이건 fragile scraping — data.go.kr HTML 바뀌면 신청 자동화 깨짐. doctor 류 라이브 점검 필요.
 - 배포: goreleaser + Homebrew tap + install.sh/ps1(kvote와 동일). Homebrew cask는 macOS 전용.
+
+## Agent skills
+
+### Issue tracker
+
+이슈·스펙은 원격 없이 `.scratch/<feature-slug>/` 에 markdown으로 관리. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+기본 5개 canonical 라벨(needs-triage/needs-info/ready-for-agent/ready-for-human/wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context — 루트 `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
