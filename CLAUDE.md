@@ -3,11 +3,17 @@
 data.go.kr(공공데이터포털)의 OpenAPI **활용신청·인증키 발급·호출을 AI 에이전트가 대신**하게 하는
 Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 핵심.
 
-## 현재 상태 (2026-07-08)
+## 현재 상태 (2026-07-24)
 
-- **브레인스토밍·설계 완료, 구현 착수 전.** 다음 단계 = writing-plans 로 구현 계획 작성.
-- 설계 스펙(단일 진실): `docs/superpowers/specs/2026-07-08-gongctl-design.md` — **먼저 정독**.
-- 코드는 아직 없음(스펙만). go.mod·스캐폴딩 미생성.
+- **v0 구현 완료, main 머지됨.** subagent-driven 11태스크 + 태스크별/whole-branch 리뷰 완주.
+- 설계 스펙: `docs/superpowers/specs/2026-07-08-gongctl-design.md`, 실행계획:
+  `docs/superpowers/plans/2026-07-23-gongctl-implementation.md`.
+- 구현: `internal/portal`(활용신청 CDP 자동화 이식 + 검색), `internal/apicall`(신규 describe/call),
+  `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(10명령), goreleaser/CI/install. 테스트 그린.
+- **남은 것 (사용자 액션)**: ① git remote 없음 → GitHub repo 생성. ② release.yml `DOPPLER_TOKEN`
+  + `homebrew-gongctl` tap PAT(첫 v* 태그 전). ③ 스펙 §7 라이브 E2E(실계정 login→apply→call) 미실행.
+- **⚠️ 미해결 보안(HIGH, 문서화됨)**: `daemon.go` `--remote-allow-origins=*` 세션탈취 리스크
+  — README 보안섹션 참조. 좁히려면 chromedp 재부착 라이브 재검증 필요.
 
 ## 확정된 핵심 결정 (스펙 요약)
 
