@@ -2,6 +2,7 @@ package apicall
 
 import (
 	"context"
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +21,7 @@ func TestDescribe(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	spec, err := Describe(context.Background(), srv.URL, "15000908")
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "15000908")
 	if err != nil {
 		t.Fatalf("describe: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestDescribeSurfaceFallback(t *testing.T) {
 			<h4>테스트기능</h4><p>표 구조가 없는 안내문</p></div></body></html>`))
 	}))
 	defer srv.Close()
-	spec, err := Describe(context.Background(), srv.URL, "1")
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "1")
 	if err != nil {
 		t.Fatalf("describe: %v", err)
 	}

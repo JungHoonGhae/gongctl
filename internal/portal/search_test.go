@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,7 +23,7 @@ func TestSearchDatasets(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(WithBaseURL(srv.URL), WithDelay(0))
+	c := New(fetch.New(fetch.WithDelay(0)), WithBaseURL(srv.URL))
 	ds, err := c.SearchDatasets(context.Background(), SearchOptions{Keyword: "선거"})
 	if err != nil {
 		t.Fatalf("search: %v", err)

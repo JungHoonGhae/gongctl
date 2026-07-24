@@ -2,6 +2,7 @@ package apicall
 
 import (
 	"context"
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func TestCallXMLToJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := Call(context.Background(), srv.URL+"/svc/op", map[string]string{"numOfRows": "10"}, "abc+def==")
+	res, err := Call(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL+"/svc/op", map[string]string{"numOfRows": "10"}, "abc+def==")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestCallDoesNotLeakKeyOnTransportError(t *testing.T) {
 	key := "SECRET+KEY=="
 	escaped := strings.ReplaceAll(key, "+", "%2B")
 
-	_, err := Call(context.Background(), "http://127.0.0.1:1/x", nil, key)
+	_, err := Call(context.Background(), fetch.New(fetch.WithDelay(0)), "http://127.0.0.1:1/x", nil, key)
 	if err == nil {
 		t.Fatal("expected transport error, got nil")
 	}
@@ -62,7 +63,7 @@ func TestCallServiceKeyHint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := Call(context.Background(), srv.URL, nil, "wrongkey")
+	res, err := Call(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, nil, "wrongkey")
 	if res == nil {
 		t.Fatal("CallResult must still be returned (surface the body)")
 	}

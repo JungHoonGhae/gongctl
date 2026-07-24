@@ -7,14 +7,15 @@ import (
 	"context"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Deps carries the collaborators the server needs.
 type Deps struct {
-	Portal  *portal.Client
-	BaseURL string // data.go.kr root for describe (override in tests)
+	Fetch   *fetch.Client
+	BaseURL string // data.go.kr root for search/describe (override in tests)
 }
 
 type searchIn struct {
@@ -50,6 +51,8 @@ func New(deps Deps) *mcp.Server {
 	if base == "" {
 		base = portal.BaseURL
 	}
+	// One shared transport → one throttle across search/describe/call.
+	pc := portal.New(deps.Fetch, portal.WithBaseURL(base))
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "gongctl",
 		Title:   "gongctl — 공공데이터포털(data.go.kr) 자동화",
@@ -60,7 +63,7 @@ func New(deps Deps) *mcp.Server {
 		Name:        "search_datasets",
 		Description: "data.go.kr 데이터셋을 키워드로 검색한다. hasOpenApi=true 가 API 호출 대상. publicDataPk 를 apply/describe_api 에 넘긴다.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, *searchOut, error) {
-		ds, err := deps.Portal.SearchDatasets(ctx, portal.SearchOptions{Keyword: in.Keyword})
+		ds, err := pc.SearchDatasets(ctx, portal.SearchOptions{Keyword: in.Keyword})
 		if err != nil {
 			return errResult(err.Error()), nil, nil
 		}
@@ -93,7 +96,7 @@ func New(deps Deps) *mcp.Server {
 		Name:        "describe_api",
 		Description: "OpenAPI 상세(상세기능·엔드포인트·요청변수)를 surface 한다. params 가 비고 rawHtml 만 있으면 표 구조가 불확실하다는 뜻 — rawHtml 을 읽어라.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in describeIn) (*mcp.CallToolResult, *apicall.APISpec, error) {
-		spec, err := apicall.Describe(ctx, base, in.PK)
+		spec, err := apicall.Describe(ctx, deps.Fetch, base, in.PK)
 		if err != nil {
 			return errResult(err.Error()), nil, nil
 		}
@@ -104,7 +107,7 @@ func New(deps Deps) *mcp.Server {
 		Name:        "call_api",
 		Description: "승인된 endpoint 를 serviceKey 주입 후 호출한다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인. 키 오류면 Encoding/Decoding 형태를 바꿔 재시도.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in callIn) (*mcp.CallToolResult, *apicall.CallResult, error) {
-		res, err := apicall.Call(ctx, in.Endpoint, in.Params, in.Key)
+		res, err := apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, in.Key)
 		if err != nil {
 			// surface the hint but still return the body
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, res, nil

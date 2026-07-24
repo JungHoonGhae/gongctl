@@ -6,12 +6,10 @@ package apicall
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -42,26 +40,11 @@ type Param struct {
 
 var reEndpoint = regexp.MustCompile(`https?://apis\.data\.go\.kr/[^\s"'<)]+`)
 
-// Describe scrapes {baseURL}/data/{pk}/openapi.do. baseURL is overridable for
-// tests; production passes portal.BaseURL.
-func Describe(ctx context.Context, baseURL, pk string) (*APISpec, error) {
+// Describe scrapes {baseURL}/data/{pk}/openapi.do through the shared transport.
+// baseURL is overridable for tests; production passes portal.BaseURL.
+func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpec, error) {
 	url := strings.TrimRight(baseURL, "/") + "/data/" + pk + "/openapi.do"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "gongctl (+https://github.com/JungHoonGhae/gongctl)")
-	req.Header.Set("Accept", "text/html,*/*")
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %s", url, resp.Status)
-	}
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	doc, err := f.GetDoc(ctx, url)
 	if err != nil {
 		return nil, err
 	}

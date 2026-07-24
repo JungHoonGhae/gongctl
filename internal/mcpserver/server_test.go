@@ -2,11 +2,11 @@ package mcpserver
 
 import (
 	"context"
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,7 +19,7 @@ func TestSearchToolRoundTrip(t *testing.T) {
 	defer srv.Close()
 
 	server := New(Deps{
-		Portal:  portal.New(portal.WithBaseURL(srv.URL), portal.WithDelay(0)),
+		Fetch:   fetch.New(fetch.WithDelay(0)),
 		BaseURL: srv.URL,
 	})
 
