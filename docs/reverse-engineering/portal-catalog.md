@@ -76,6 +76,21 @@ to accept the key for that service. Verified 2026-07-25 — an API applied for
 minutes earlier returned 403 while one applied ~2 hours earlier returned 200 with
 the same key. `call` surfaces this as a hint so it is not mistaken for a key error.
 
+## Specs that live only in the guide document
+
+Some datasets document nothing on `openapi.do` — no endpoint, no 요청변수 table —
+and ship the whole spec in the attached 참고문서 (hwp/xlsx/zip). Example: pk
+15012005 (소상공인시장진흥공단 상가(상권)정보). `describe` surfaces this as an empty
+`operations` plus a `note` and a **`guideDocUrl`** built from the page's
+`fn_fileDownload('FILE_...','N')` handler:
+
+    {baseURL}/cmm/cmm/fileDownload.do?atchFileId=FILE_...&fileDetailSn=N
+
+Verified 2026-07-25: that URL returns the guide (HTTP 200, 8 MB zip). gongctl
+never parses the document — reading it is the agent's job, by design (spec §9).
+For 15012005 the zip also carried a 30 MB `주요상권현황` CSV, i.e. guide documents
+sometimes contain bulk data the API itself does not expose.
+
 ## Known gaps
 
 - **심의(manual-review) applications** are not handled — auto-approved APIs only.

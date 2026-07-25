@@ -11,7 +11,9 @@ const GuideDoc = `# gongctl — data.go.kr 사용 가이드
    - 로그인 세션이 필요하다. 세션이 없으면 사람에게 ` + "`gongctl login`" + ` 을 안내하는 에러가 온다.
 4. **describe_api(pk)** — 상세기능·엔드포인트·요청변수를 surface. 파라미터는 여기서 확인해 구성한다.
    - params 가 비어 있고 rawHtml 만 있으면, 표 구조가 불확실하다는 뜻 — rawHtml 을 직접 읽어라.
-   - guideDoc(참고문서)는 링크만 준다. 필요하면 사람에게 열어보게 한다.
+   - **operations 가 비어 있고 note 가 있으면**: 이 API 는 명세를 상세페이지에 싣지 않고 참고문서에만
+     둔 경우다. guideDocUrl 을 직접 내려받아(zip/hwp/xlsx) 엔드포인트와 파라미터를 확인하라.
+     **절대 파라미터를 추측해서 호출하지 마라** — 조용히 틀린 결과가 나온다.
 5. **call_api(endpoint, params)** — 실제 호출. **key 는 넘기지 않아도 된다** — gongctl 이 로그인
    세션에서 계정 인증키를 자동으로 가져다 쓴다. 사람에게 인증키를 물어보지 마라.
    (키 값을 직접 봐야 하면 **get_api_key()**.)

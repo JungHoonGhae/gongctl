@@ -72,3 +72,58 @@ func TestDescribeSurfaceFallback(t *testing.T) {
 		t.Error("expected RawHTML surfaced as fallback")
 	}
 }
+
+// Some OpenAPI pages document nothing inline — no endpoint, no request-variable
+// table — because the whole spec ships in an attached guide document. Returning
+// an empty Operations list there is a dead end for an agent, so Describe must
+// point at the guide it can actually fetch.
+func TestDescribeGuideOnlyPage(t *testing.T) {
+	body, err := os.ReadFile("testdata/openapi-guide-only.html")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.Write(body)
+	}))
+	defer srv.Close()
+
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "15012005")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if len(spec.Operations) != 0 {
+		t.Errorf("must not invent operations, got %d", len(spec.Operations))
+	}
+	if spec.GuideDoc == "" {
+		t.Error("guideDoc name missing")
+	}
+	// The name alone is not actionable — the agent needs a URL it can fetch.
+	if !strings.Contains(spec.GuideDocURL, "FILE_000000003547578") {
+		t.Errorf("guideDocUrl = %q, want a download URL carrying the atchFileId", spec.GuideDocURL)
+	}
+	if spec.Note == "" {
+		t.Error("expected a note telling the agent where the spec actually lives")
+	}
+}
+
+// A page that DOES document its operations must not gain a note.
+func TestDescribeNoNoteWhenOperationsFound(t *testing.T) {
+	body, err := os.ReadFile("testdata/op-15000908.html")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.Write(body)
+	}))
+	defer srv.Close()
+
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "15000908")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if spec.Note != "" {
+		t.Errorf("note should be empty when operations exist, got %q", spec.Note)
+	}
+}

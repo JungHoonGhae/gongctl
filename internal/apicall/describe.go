@@ -6,6 +6,7 @@ package apicall
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -18,7 +19,11 @@ type APISpec struct {
 	PublicDataPk string      `json:"publicDataPk"`
 	DataName     string      `json:"dataName"`
 	Operations   []Operation `json:"operations"`
-	GuideDoc     string      `json:"guideDoc,omitempty"` // 참고문서 link/name, NOT parsed
+	GuideDoc     string      `json:"guideDoc,omitempty"`    // 참고문서 file name, NOT parsed
+	GuideDocURL  string      `json:"guideDocUrl,omitempty"` // where to fetch that file
+	// Note is set only when the page documents no operations, to say where the
+	// spec actually lives. Without it an empty Operations list is a dead end.
+	Note string `json:"note,omitempty"`
 }
 
 // Operation is one 상세기능. When the request-variable table parses cleanly,
@@ -39,6 +44,11 @@ type Param struct {
 }
 
 var reEndpoint = regexp.MustCompile(`https?://apis\.data\.go\.kr/[^\s"'<)]+`)
+
+// reFileDownload pulls the two ids out of the 참고문서 link's
+// fn_fileDownload('FILE_...','1') handler, which is the only place the page
+// carries them.
+var reFileDownload = regexp.MustCompile(`fn_fileDownload\('([^']+)'\s*,\s*'([^']+)'\)`)
 
 // Describe scrapes {baseURL}/data/{pk}/openapi.do through the shared transport.
 // baseURL is overridable for tests; production passes portal.BaseURL.
@@ -85,14 +95,35 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 		}
 	})
 
-	// GuideDoc: the 참고문서 row (surface link text only; never fetch/parse it).
+	// GuideDoc: the 참고문서 row. The file itself is never fetched or parsed here —
+	// but its download URL is surfaced, because the file name alone gives an agent
+	// nothing it can act on.
 	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
 		if strings.Contains(th.Text(), "참고문서") {
-			spec.GuideDoc = cleanText(th.NextFiltered("td").Text())
+			td := th.NextFiltered("td")
+			spec.GuideDoc = cleanText(td.Text())
+			if onclick, ok := td.Find("a[onclick]").First().Attr("onclick"); ok {
+				if m := reFileDownload.FindStringSubmatch(onclick); m != nil {
+					spec.GuideDocURL = fmt.Sprintf("%s/cmm/cmm/fileDownload.do?atchFileId=%s&fileDetailSn=%s",
+						strings.TrimRight(baseURL, "/"), m[1], m[2])
+				}
+			}
 			return false
 		}
 		return true
 	})
+
+	// Some datasets document the whole spec in the attached guide document and
+	// leave the page itself empty. Say so, rather than handing back an empty list
+	// that reads as "this API has no operations".
+	if len(spec.Operations) == 0 {
+		spec.Note = "이 페이지에는 상세기능·요청변수 표가 없습니다 — 명세가 참고문서(guideDocUrl)에만 있는 API입니다. " +
+			"guideDocUrl 을 내려받아 읽고 엔드포인트·파라미터를 확인하세요. 파라미터를 추측해 호출하지 마세요."
+		if spec.GuideDocURL == "" {
+			spec.Note = "이 페이지에서 상세기능·요청변수를 찾지 못했고 참고문서 링크도 없습니다 — " +
+				"페이지 구조가 바뀐 것일 수 있습니다 (gongctl doctor 로 확인). 파라미터를 추측하지 마세요."
+		}
+	}
 
 	return spec, nil
 }
