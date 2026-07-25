@@ -11,8 +11,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// BaseURL is the portal root.
-const BaseURL = "https://www.data.go.kr"
+// BaseURL is the portal root. It is a var, not a const, so tests can point the
+// CDP probe at a local fixture server (see probe_live_test.go).
+var BaseURL = "https://www.data.go.kr"
 
 // LoginTimeout bounds the interactive login wait.
 const LoginTimeout = 5 * time.Minute
@@ -88,6 +89,10 @@ func Applications(ctx context.Context) ([]Application, error) {
 	defer cancelAlloc()
 	tctx, cancelTab := chromedp.NewContext(allocCtx)
 	defer cancelTab()
+	// Hard bound on the whole probe. Safe here (unlike inside probeIn) because
+	// this tab is single-use: the timeout closing it is exactly what we want.
+	tctx, tcancel := context.WithTimeout(tctx, 40*time.Second)
+	defer tcancel()
 
 	html, loc, err := probeIn(tctx, AccountListPath)
 	if err != nil {
@@ -124,22 +129,27 @@ func Logout(ctx context.Context) error {
 
 // probeIn navigates the given (reused) tab to path, lets the SSO trampoline
 // settle, and returns the final HTML + URL.
+//
+// It uses tctx DIRECTLY and never derives a cancellable child from it: with
+// chromedp, cancelling (or expiring) a context derived from a tab context closes
+// the tab, so a per-probe timeout would kill the very tab the caller wants to
+// reuse. Login polls this in a loop — a child cancel here left every probe after
+// the first failing with "context canceled", so a successful login was never
+// detected. Callers that need a hard bound put the timeout on the tab context at
+// creation time instead (see Applications, Apply).
 func probeIn(tctx context.Context, path string) (html, loc string, err error) {
-	rctx, rcancel := context.WithTimeout(tctx, 25*time.Second)
-	defer rcancel()
-
-	if err = chromedp.Run(rctx, chromedp.Navigate(BaseURL+path)); err != nil {
+	if err = chromedp.Run(tctx, chromedp.Navigate(BaseURL+path)); err != nil {
 		return "", "", err
 	}
 	// Settle: the portal may bounce through /sso/profile.do (an auto-submitting
 	// form). Wait until the URL is no longer that trampoline, then read.
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if e := chromedp.Run(rctx, chromedp.Location(&loc)); e != nil {
+		if e := chromedp.Run(tctx, chromedp.Location(&loc)); e != nil {
 			return "", "", e
 		}
 		if !strings.Contains(loc, "/sso/profile.do") {
-			if e := chromedp.Run(rctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery)); e == nil {
+			if e := chromedp.Run(tctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery)); e == nil {
 				return html, loc, nil
 			}
 		}
