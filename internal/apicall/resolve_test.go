@@ -1,6 +1,29 @@
 package apicall
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/JungHoonGhae/gongctl/internal/fetch"
+)
+
+// describeFromHTML runs Describe against a page body, for assertions about a single
+// row of the summary table.
+func describeFromHTML(t *testing.T, body string) *APISpec {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("<html><body>" + body + "</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "1")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	return spec
+}
 
 // The same field arrives with two vocabularies depending on which source described
 // the API: the embedded Swagger document says 필수/옵션, the rendered HTML table
@@ -76,5 +99,49 @@ func TestDedupeOperationsCollapsesIdenticalDuplicates(t *testing.T) {
 	other.Params = []Param{{Name: "pageNo", Required: "필"}}
 	if got := dedupeOperations([]Operation{dup, other}); len(got) != 2 {
 		t.Errorf("operations differing in parameters → %d, want 2", len(got))
+	}
+}
+
+// gongctl applies for a development account, and the portal grades the two stages
+// separately: every sampled dataset auto-approves at 개발단계 while a third of them
+// require review at 운영단계. Conflating the two would either promise a key that
+// needs a human or warn about review that never applies here.
+func TestApprovalParsing(t *testing.T) {
+	spec := describeFromHTML(t, `<table><tr>
+		<th>심의유형</th><td> 개발단계 : 자동승인 / 운영단계 : 심의승인 </td>
+	</tr></table>`)
+	if spec.Approval == nil {
+		t.Fatal("심의유형 row not surfaced")
+	}
+	if spec.Approval.Dev != "자동승인" || spec.Approval.Ops != "심의승인" {
+		t.Errorf("dev=%q ops=%q, want 자동승인/심의승인", spec.Approval.Dev, spec.Approval.Ops)
+	}
+	if !spec.Approval.AutoApproved() {
+		t.Error("dev 자동승인 should report AutoApproved")
+	}
+	if spec.Approval.Raw == "" {
+		t.Error("raw row should be kept in case the wording changes")
+	}
+}
+
+// A page without the row must not be reported as auto-approving.
+func TestApprovalAbsentIsNotAssumedAutomatic(t *testing.T) {
+	spec := describeFromHTML(t, `<table><tr><th>제공기관</th><td>어딘가</td></tr></table>`)
+	if spec.Approval != nil {
+		t.Errorf("no 심의유형 row → approval should stay nil, got %+v", spec.Approval)
+	}
+	if spec.Approval.AutoApproved() {
+		t.Error("unknown approval must not read as automatic")
+	}
+}
+
+// A review stage the portal words differently must not silently read as automatic.
+func TestApprovalUnparsedKeepsRaw(t *testing.T) {
+	spec := describeFromHTML(t, `<table><tr><th>심의유형</th><td>전면 심의 대상</td></tr></table>`)
+	if spec.Approval == nil || spec.Approval.Raw != "전면 심의 대상" {
+		t.Fatalf("unexpected approval %+v", spec.Approval)
+	}
+	if spec.Approval.AutoApproved() {
+		t.Error("unrecognised wording must not read as auto-approved")
 	}
 }

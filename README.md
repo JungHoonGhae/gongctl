@@ -81,6 +81,12 @@ gongctl catalog orgs 폭염          # 그 주제를 개방한 기관 순위
 gongctl call --pk 15077974 --param pageNo=1 --param numOfRows=3 --param type=xml
 ```
 
+> **승인 조건은 `describe`의 `approval`에 나옵니다.** 포털은 개발단계와 운영단계를 따로
+> 심의하는데, gongctl이 쓰는 개발계정 경로는 조사한 데이터셋에서 사실상 모두 자동승인이었습니다
+> (무작위 90건 표본에 개발단계 심의는 0건). 운영단계는 약 1/3이 심의승인이므로, 나중에 상용으로
+> 옮길 계획이면 미리 확인할 값입니다. 그 행이 없는 데이터셋(대개 LINK)은 자동승인으로
+> 가정하지 않고 `approval` 없음으로 보고합니다.
+>
 > 엔드포인트 경로는 추측할 수 없는 형태(`HeatWaveCasualtiesRegion/getHeatWaveCasualtiesRegionList`)이고,
 > 틀리면 "없다"가 아니라 404·500이 옵니다. `--pk` 를 주면 포털에서 조회하고, **명세의 필수
 > 요청변수가 빠졌는지 호출 전에 확인**합니다 — 빠진 채로 부르면 data.go.kr은 에러가 아니라

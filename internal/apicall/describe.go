@@ -31,10 +31,34 @@ type APISpec struct {
 	// EndpointOnly marks a spec whose endpoint was recovered from the page but
 	// whose request parameters the portal never documents.
 	EndpointOnly bool `json:"endpointOnly,omitempty"`
+	// Approval is the portal's 심의유형 row: whether an application is granted
+	// automatically or waits for a human at the publishing agency.
+	Approval *Approval `json:"approval,omitempty"`
 	// Note is set only when the spec is incomplete, to say where the rest of it
 	// lives. Without it an empty Operations list is a dead end.
 	Note string `json:"note,omitempty"`
 }
+
+// Approval reports the two stages the portal grades separately. gongctl applies
+// for a development account, so Dev is the one that decides whether a key arrives
+// immediately; Ops describes what a later move to production would face and is
+// surfaced because that is a decision a caller may need to make now.
+//
+// Absent on datasets whose page carries no 심의유형 row (LINK datasets, mostly) —
+// unknown is reported as unknown rather than assumed to be automatic.
+type Approval struct {
+	Dev string `json:"dev,omitempty"` // 개발단계: 자동승인 | 심의승인
+	Ops string `json:"ops,omitempty"` // 운영단계: 자동승인 | 심의승인
+	Raw string `json:"raw,omitempty"` // the row verbatim, in case the wording changes
+}
+
+// AutoApproved reports whether applying yields a key without human review.
+func (a *Approval) AutoApproved() bool {
+	return a != nil && strings.Contains(a.Dev, "자동승인")
+}
+
+// reApproval reads "개발단계 : 자동승인 / 운영단계 : 심의승인".
+var reApproval = regexp.MustCompile(`개발단계\s*[::]\s*(\S+)\s*/\s*운영단계\s*[::]\s*(\S+)`)
 
 // Operation is one 상세기능. When the request-variable table parses cleanly,
 // Params is filled; otherwise RawHTML carries the section verbatim.
@@ -136,6 +160,19 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
 		if strings.Contains(cleanText(th.Text()), "API 유형") {
 			spec.APIType = cleanText(th.NextFiltered("td").Text())
+			return false
+		}
+		return true
+	})
+
+	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
+		if strings.Contains(cleanText(th.Text()), "심의유형") {
+			raw := cleanText(th.NextFiltered("td").Text())
+			a := &Approval{Raw: raw}
+			if m := reApproval.FindStringSubmatch(raw); m != nil {
+				a.Dev, a.Ops = m[1], m[2]
+			}
+			spec.Approval = a
 			return false
 		}
 		return true

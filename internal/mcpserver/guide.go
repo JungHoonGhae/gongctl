@@ -16,8 +16,14 @@ const GuideDoc = `# gongctl — data.go.kr 사용 가이드
 1. **search_datasets(keyword)** — 포털 라이브 검색. 카탈로그에 없는 최신 항목을 확인할 때 쓴다.
    hasOpenApi=true 인 것이 API 호출 대상.
 2. **list_applications()** — 이미 활용신청한 API와 그 상태·인증키 만료일을 확인.
-3. **apply(pk, purpose)** — 아직 신청 안 했다면 활용신청(자동승인 개발계정 → 즉시 사용 가능).
+3. **apply(pk, purpose)** — 아직 신청 안 했다면 활용신청(개발계정 → 자동승인이면 즉시 사용 가능).
    - 로그인 세션이 필요하다. 세션이 없으면 사람에게 ` + "`gongctl login`" + ` 을 안내하는 에러가 온다.
+   - **신청 전에 describe_api 의 approval 을 보라.** approval.dev 가 "자동승인"이면 사람 개입 없이
+     즉시 승인된다(조사한 데이터셋에서는 개발단계가 사실상 모두 자동승인이었다).
+     approval.dev 가 심의승인이면 제공기관의 사람이 승인해야 하므로 기다리지 말고 사람에게 알려라.
+     approval.ops 는 나중에 운영(상용)으로 넘어갈 때의 조건이다 — 지금 호출에는 영향이 없지만,
+     운영단계가 심의승인인 데이터셋이 적지 않으니(표본의 약 1/3) 사용자에게 알려둘 값이다.
+     approval 이 없으면 포털에 그 행이 없는 것이다(대개 LINK) — 자동승인이라고 가정하지 마라.
 4. **describe_api(pk)** — 상세기능·엔드포인트·요청변수를 surface. 파라미터는 여기서 확인해 구성한다.
    - params 가 비어 있고 rawHtml 만 있으면, 표 구조가 불확실하다는 뜻 — rawHtml 을 직접 읽어라.
    - **operations 가 비어 있고 note 가 있으면**: 이 API 는 명세를 상세페이지에 싣지 않고 참고문서에만

@@ -5,6 +5,29 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.5.0]
+
+### Added
+
+- **`describe` surfaces the portal's 심의유형** as `approval{dev, ops, raw}` — whether
+  an application is granted automatically or waits for a person at the publishing
+  agency. `dev` is the stage gongctl's applications go through and decides whether a
+  key arrives immediately; `ops` says what a later move to production would face. A
+  missing row reports nothing rather than "automatic", and wording the parser does
+  not recognise is kept verbatim instead of being read as auto-approved — assuming
+  automatic is the answer that leaves a caller waiting on approval that is not coming.
+
+### Changed
+
+- **A known limitation from 0.1.0 was overstated and is withdrawn.** It said only
+  auto-approved applications work and 심의 datasets cannot be driven to approval,
+  which reads as a class of datasets gongctl cannot handle. In a random sample of 90
+  catalogue entries, none required review at 개발단계 — the stage gongctl applies
+  through. 57 carried the row (all 자동승인 at 개발단계, 16 of those 심의승인 at
+  운영단계) and 33 had no row, being LINK datasets with no application path here
+  anyway. The review gate is real but sits at 운영단계, which gongctl does not do; as
+  written, the limitation would have talked users out of datasets that apply fine.
+
 ## [0.4.0]
 
 ### Added
