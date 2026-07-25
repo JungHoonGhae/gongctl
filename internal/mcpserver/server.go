@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
+	"github.com/JungHoonGhae/gongctl/internal/catalog"
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"github.com/JungHoonGhae/gongctl/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,6 +37,17 @@ type callIn struct {
 	Endpoint string            `json:"endpoint" jsonschema:"full apis.data.go.kr endpoint URL"`
 	Params   map[string]string `json:"params,omitempty" jsonschema:"request variables as key/value"`
 	Key      string            `json:"key,omitempty" jsonschema:"account serviceKey — omit it and gongctl fetches the account key from the login session"`
+}
+type catalogIn struct {
+	Query string `json:"query" jsonschema:"space-separated terms; every term must appear in the title, publisher or description"`
+	Limit int    `json:"limit,omitempty" jsonschema:"max rows to return (default 20) — keep it small, the total match count comes back separately"`
+}
+type catalogOut struct {
+	Total    int           `json:"total"`    // matches found
+	Shown    int           `json:"shown"`    // rows returned
+	SyncedAt string        `json:"syncedAt"` // when the catalogue was built
+	Stale    bool          `json:"stale"`    // true = re-sync, results may be incomplete
+	Hits     []catalog.Hit `json:"hits"`
 }
 type keyOut struct {
 	ServiceKey string `json:"serviceKey"`
@@ -72,6 +84,26 @@ func New(deps Deps) *mcp.Server {
 			return errResult(err.Error()), nil, nil
 		}
 		return nil, &searchOut{Datasets: ds}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "catalog_search",
+		Description: "로컬 카탈로그에서 어떤 API 가 존재하는지 찾는다. 포털 검색과 달리 전체 목록을 한 번에 " +
+			"훑으므로 '이런 데이터가 있나?'를 키워드를 추측해가며 여러 번 물을 필요가 없다. 결과는 활용신청 " +
+			"많은 순(=실제로 쓰이는 순)이고, 설명문은 반환하지 않는다(컨텍스트 절약). 데이터 탐색은 이 도구로 " +
+			"시작하라. stale=true 면 스냅샷이 오래된 것이므로 최근 신설 API 가 누락될 수 있다. " +
+			"카탈로그가 없으면 사람에게 `gongctl catalog sync` 를 안내하라.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in catalogIn) (*mcp.CallToolResult, *catalogOut, error) {
+		cat, err := catalog.Load()
+		if err != nil {
+			return errResult(err.Error()), nil, nil
+		}
+		hits, total := cat.Search(in.Query, in.Limit)
+		return nil, &catalogOut{
+			Total: total, Shown: len(hits),
+			SyncedAt: cat.SyncedAt.Format("2006-01-02"), Stale: cat.Stale(),
+			Hits: hits,
+		}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

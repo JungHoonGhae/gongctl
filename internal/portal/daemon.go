@@ -34,6 +34,10 @@ type daemonState struct {
 	Port         int    `json:"port"`
 }
 
+// ConfigDir is gongctl's config directory, exported so sibling packages (the
+// catalogue) can store their own state beside the session files.
+func ConfigDir() (string, error) { return configDir() }
+
 func configDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {

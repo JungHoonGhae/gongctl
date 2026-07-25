@@ -7,9 +7,11 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
+	"github.com/JungHoonGhae/gongctl/internal/catalog"
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
 	"github.com/JungHoonGhae/gongctl/internal/portal"
 )
@@ -42,7 +44,29 @@ func Run(ctx context.Context, fc *fetch.Client, baseURL string) []Check {
 	return []Check{
 		searchCheck(ctx, fc, baseURL),
 		describeCheck(ctx, fc, baseURL),
+		catalogCheck(),
 	}
+}
+
+// catalogCheck reports the local catalogue's freshness. A stale snapshot is the
+// quiet failure mode of local discovery: searches keep succeeding while silently
+// missing everything published since the last sync, so doctor — the command that
+// exists to make quiet problems loud — is where it belongs.
+func catalogCheck() Check {
+	cat, err := catalog.Load()
+	if errors.Is(err, catalog.ErrNotSynced) {
+		return Check{"catalog", StatusSkipped, "카탈로그 없음 — `gongctl catalog sync` 로 만들면 검색이 즉시 처리됩니다"}
+	}
+	if err != nil {
+		return Check{"catalog", StatusDrift, "카탈로그를 읽지 못했습니다: " + err.Error()}
+	}
+	days := cat.Age().Hours() / 24
+	if cat.Stale() {
+		return Check{"catalog", StatusDrift, fmt.Sprintf(
+			"%.0f일 전 스냅샷 (%d건) — 그 이후 신설된 API 가 검색에서 누락됩니다. `gongctl catalog sync`",
+			days, len(cat.Entries))}
+	}
+	return Check{"catalog", StatusOK, fmt.Sprintf("%.1f일 전 수집 (%d건)", days, len(cat.Entries))}
 }
 
 func searchCheck(ctx context.Context, fc *fetch.Client, baseURL string) Check {

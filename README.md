@@ -53,6 +53,18 @@ gongctl call <endpoint> --param numOfRows=5   # 인증키 자동
 ```
 
 ```bash
+# 무엇이 존재하는지 먼저 훑기 — 로컬 카탈로그(한 번 sync 후 즉시 검색)
+gongctl catalog sync              # 전체 오픈API 목록 수집 (약 2~3분)
+gongctl catalog search 폭염 온열   # 활용신청 많은 순, 설명문 없이 간결하게
+gongctl catalog orgs 폭염          # 그 주제를 개방한 기관 순위
+```
+
+> 포털은 키워드 검색만 제공합니다. 카탈로그가 없으면 "이런 데이터가 있나?"를 확인하려면
+> 검색어를 하나씩 추측해볼 수밖에 없고, 못 찾았을 때 *없는 것*인지 *단어가 틀린 것*인지
+> 알 수 없습니다. `catalog`는 전체를 로컬에 두고 한 번에 훑습니다.
+> `doctor`가 카탈로그가 오래됐는지도 함께 점검합니다.
+
+```bash
 # 계정 인증키 조회 (call 은 생략 시 자동으로 이 키를 씁니다)
 gongctl key
 

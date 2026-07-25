@@ -5,7 +5,12 @@ package mcpserver
 const GuideDoc = `# gongctl — data.go.kr 사용 가이드
 
 ## 도구 사용 순서
-1. **search_datasets(keyword)** — 데이터셋을 찾는다. hasOpenApi=true 인 것이 API 호출 대상.
+0. **catalog_search(query)** — **탐색은 여기서 시작하라.** 로컬 카탈로그(전체 목록)를 한 번에
+   훑으므로, 키워드를 하나씩 추측하며 포털에 반복 질의할 필요가 없다. 활용신청 많은 순으로
+   오고 설명문은 오지 않는다(컨텍스트 절약). total 이 크면 검색어를 좁혀라.
+   stale=true 면 최근 신설 API 가 누락될 수 있으니 사람에게 gongctl catalog sync 를 권하라.
+1. **search_datasets(keyword)** — 포털 라이브 검색. 카탈로그에 없는 최신 항목을 확인할 때 쓴다.
+   hasOpenApi=true 인 것이 API 호출 대상.
 2. **list_applications()** — 이미 활용신청한 API와 그 상태·인증키 만료일을 확인.
 3. **apply(pk, purpose)** — 아직 신청 안 했다면 활용신청(자동승인 개발계정 → 즉시 사용 가능).
    - 로그인 세션이 필요하다. 세션이 없으면 사람에게 ` + "`gongctl login`" + ` 을 안내하는 에러가 온다.
