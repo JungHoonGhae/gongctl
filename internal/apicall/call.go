@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
 )
+
+// ErrKeyRejected reports that data.go.kr refused the serviceKey itself. Callers
+// that cached the key should drop their copy — the user may have reissued it —
+// and read it again rather than retrying with the same value.
+var ErrKeyRejected = errors.New("data.go.kr 이 인증키를 거부했습니다")
 
 // CallResult is a surfaced API response. Body is a map (XML→JSON or JSON),
 // or a string when the content isn't structured.
@@ -68,9 +74,9 @@ func Call(ctx context.Context, f *fetch.Client, endpoint string, params map[stri
 	// Error surface: never swallow. If the body signals an unregistered key,
 	// return the surfaced result plus a hint — the Encoding/Decoding trap.
 	if strings.Contains(string(resp.Body), "SERVICE_KEY_IS_NOT_REGISTERED_ERROR") {
-		return res, fmt.Errorf("data.go.kr: SERVICE_KEY_IS_NOT_REGISTERED_ERROR — " +
-			"인증키 형태(Encoding/Decoding)가 잘못됐을 수 있습니다. " +
-			"활용신청 상세의 다른 키(Encoding↔Decoding)로 바꿔 다시 시도하세요")
+		return res, fmt.Errorf("%w: SERVICE_KEY_IS_NOT_REGISTERED_ERROR — "+
+			"키 형태(Encoding/Decoding)가 잘못됐거나, 포털에서 키를 재발급해 "+
+			"이 키가 무효해졌을 수 있습니다", ErrKeyRejected)
 	}
 	return res, nil
 }

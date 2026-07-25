@@ -5,6 +5,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
@@ -119,6 +120,14 @@ func New(deps Deps) *mcp.Server {
 			key = k
 		}
 		res, err := apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, key)
+		// A rejected key may just be a stale cached copy (the user reissued it).
+		// Drop it and read the key again — once, so a genuinely bad key still fails.
+		if errors.Is(err, apicall.ErrKeyRejected) && in.Key == "" {
+			portal.InvalidateCachedKey()
+			if fresh, kerr := portal.APIKey(ctx); kerr == nil && fresh != key {
+				res, err = apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, fresh)
+			}
+		}
 		if err != nil {
 			// surface the hint but still return the body
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, res, nil

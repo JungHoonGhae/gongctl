@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -55,16 +56,24 @@ func Login(ctx context.Context, progress io.Writer, keepBrowser bool) error {
 	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
 	defer cancelAlloc()
 
+	// One blank tab, never navigated — it exists only as a handle for reading the
+	// profile's cookie jar. Navigating a probe tab to an authenticated page while
+	// the user is still logging in bounces it to the login wall, which shows up as
+	// a SECOND login screen and steals focus from the tab they are typing in.
+	// Reading cookies needs no navigation, and the "are we logged in yet?" question
+	// is then answered over plain HTTP, where a timeout is safe to apply.
+	tctx, cancelTab := chromedp.NewContext(allocCtx)
+	defer cancelTab()
+	if err := chromedp.Run(tctx, network.Enable()); err != nil {
+		return err
+	}
+
 	logln("로그인 완료를 기다리는 중… (최대 %d분)", int(LoginTimeout.Minutes()))
 	deadline := time.Now().Add(LoginTimeout)
 	tick := 0
 	for time.Now().Before(deadline) {
-		// A fresh tab per poll: each probe is bounded and disposable, so a page
-		// that never finishes loading costs one iteration instead of wedging the
-		// whole wait (a reused tab cannot carry a timeout — cancelling it closes
-		// the tab, see probeIn).
-		html, loc, err, tctx, cancelTab := probeOnce(allocCtx)
-		if err == nil && isAuthed(html, loc) {
+		sess, cerr := extractCookies(tctx)
+		if cerr == nil && sessionWorks(ctx, sess) {
 			logln("✅ 로그인 확인.")
 			if err := saveState(st); err != nil {
 				return err
@@ -261,17 +270,6 @@ func isLoginWall(html, loc string) bool {
 		return true
 	}
 	return strings.Contains(html, "통합 로그인") || strings.Contains(html, "로그인 중 입니다")
-}
-
-// probeOnce opens a disposable tab, probes the 활용신청 현황 page with a hard
-// bound, and hands the tab back so a successful caller can still read cookies
-// from it. The caller MUST call cancelTab.
-func probeOnce(allocCtx context.Context) (html, loc string, err error, tctx context.Context, cancelTab context.CancelFunc) {
-	tabCtx, cancel := chromedp.NewContext(allocCtx)
-	bounded, cancelBound := context.WithTimeout(tabCtx, 20*time.Second)
-	cancelTab = func() { cancelBound(); cancel() }
-	html, loc, err = probeIn(bounded, AccountListPath)
-	return html, loc, err, bounded, cancelTab
 }
 
 // probeViaBrowser fetches a portal path through the live browser. Used as the

@@ -73,6 +73,15 @@ func cacheKey(key string) {
 	os.WriteFile(filepath.Join(dir, keyCacheFile), []byte(key), 0o600) // credential
 }
 
+// InvalidateCachedKey drops the cached serviceKey so the next APIKey call reads it
+// from the portal again. Call this when the gateway rejects the key: the user may
+// have reissued it, which silently invalidates the copy on disk.
+func InvalidateCachedKey() {
+	if dir, err := configDir(); err == nil {
+		os.Remove(filepath.Join(dir, keyCacheFile))
+	}
+}
+
 func cachedKey() string {
 	dir, err := configDir()
 	if err != nil {

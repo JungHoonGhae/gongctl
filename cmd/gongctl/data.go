@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -101,6 +102,15 @@ func callCmd() *cobra.Command {
 				pm[kv[0]] = kv[1]
 			}
 			res, err := apicall.Call(cmd.Context(), newFetchClient(), args[0], pm, key)
+			// The cached key may be stale (reissued in the portal). Drop it and
+			// retry once with a freshly read key before reporting failure.
+			if errors.Is(err, apicall.ErrKeyRejected) && !cmd.Flags().Changed("key") {
+				portal.InvalidateCachedKey()
+				if fresh, kerr := portal.APIKey(cmd.Context()); kerr == nil && fresh != key {
+					fmt.Fprintln(cmd.ErrOrStderr(), "인증키가 거부됐습니다 — 캐시를 버리고 다시 조회해 재시도합니다.")
+					res, err = apicall.Call(cmd.Context(), newFetchClient(), args[0], pm, fresh)
+				}
+			}
 			if res != nil {
 				output.WriteJSON(cmd.OutOrStdout(), res)
 			}
