@@ -6,6 +6,8 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
 	"github.com/JungHoonGhae/gongctl/internal/catalog"
@@ -34,7 +36,9 @@ type describeIn struct {
 	PK string `json:"pk" jsonschema:"publicDataPk of an OpenAPI dataset"`
 }
 type callIn struct {
-	Endpoint string            `json:"endpoint" jsonschema:"full apis.data.go.kr endpoint URL"`
+	Endpoint string            `json:"endpoint,omitempty" jsonschema:"full apis.data.go.kr endpoint URL. Prefer pk instead — endpoint paths cannot be guessed, and a wrong one answers 404 or 500 rather than saying so"`
+	PK       string            `json:"pk,omitempty" jsonschema:"publicDataPk — gongctl looks the endpoint up from the portal instead of you typing or guessing a URL. Use this unless you already hold an endpoint from describe_api"`
+	Op       string            `json:"op,omitempty" jsonschema:"which operation, named by the last path segment of its endpoint (e.g. getHeatWaveCasualtiesRegionList). Omit when the dataset has only one"`
 	Params   map[string]string `json:"params,omitempty" jsonschema:"request variables as key/value"`
 	Key      string            `json:"key,omitempty" jsonschema:"account serviceKey — omit it and gongctl fetches the account key from the login session"`
 }
@@ -153,9 +157,27 @@ func New(deps Deps) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "call_api",
-		Description: "승인된 endpoint 를 호출한다. key 를 생략하면 로그인 세션에서 계정 인증키를 자동으로 가져다 쓴다 — 사람에게 키를 물어볼 필요가 없다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인.",
+		Name: "call_api",
+		Description: "승인된 API 를 호출한다. **endpoint URL 을 지어내지 마라** — pk 를 주면 " +
+			"gongctl 이 포털에서 엔드포인트를 조회하고, 명세의 필수 요청변수가 빠졌는지 호출 전에 " +
+			"확인한다(빠지면 data.go.kr 은 에러 대신 빈 결과를 주므로 스스로 알아채기 어렵다). " +
+			"상세기능이 여럿이면 op 로 지정하라(엔드포인트 마지막 경로 조각). key 를 생략하면 로그인 세션에서 계정 인증키를 자동으로 가져다 쓴다 — 사람에게 키를 물어볼 필요가 없다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in callIn) (*mcp.CallToolResult, *apicall.CallResult, error) {
+		endpoint := in.Endpoint
+		if endpoint == "" {
+			if in.PK == "" {
+				return errResult("endpoint 또는 pk 중 하나가 필요합니다"), nil, nil
+			}
+			resolved, rerr := apicall.Resolve(ctx, deps.Fetch, base, in.PK, in.Op)
+			if rerr != nil {
+				return errResult(rerr.Error()), nil, nil
+			}
+			endpoint = resolved.Endpoint
+			if missing := apicall.MissingRequired(resolved, in.Params); len(missing) > 0 {
+				return errResult(fmt.Sprintf("필수 요청변수가 빠졌습니다: %s — describe_api(pk=%s) 로 확인하세요",
+					strings.Join(missing, ", "), in.PK)), nil, nil
+			}
+		}
 		key := in.Key
 		if key == "" {
 			k, kerr := portal.APIKey(ctx)
@@ -164,13 +186,13 @@ func New(deps Deps) *mcp.Server {
 			}
 			key = k
 		}
-		res, err := apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, key)
+		res, err := apicall.Call(ctx, deps.Fetch, endpoint, in.Params, key)
 		// A rejected key may just be a stale cached copy (the user reissued it).
 		// Drop it and read the key again — once, so a genuinely bad key still fails.
 		if errors.Is(err, apicall.ErrKeyRejected) && in.Key == "" {
 			portal.InvalidateCachedKey()
 			if fresh, kerr := portal.APIKey(ctx); kerr == nil && fresh != key {
-				res, err = apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, fresh)
+				res, err = apicall.Call(ctx, deps.Fetch, endpoint, in.Params, fresh)
 			}
 		}
 		if err != nil {

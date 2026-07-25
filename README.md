@@ -77,6 +77,16 @@ gongctl catalog orgs 폭염          # 그 주제를 개방한 기관 순위
 > 것까지 보여주고, 그렇게 넓혔다는 사실을 `relaxed`로 알려줍니다.
 
 ```bash
+# 호출 — 엔드포인트 URL 을 타이핑하지 않습니다
+gongctl call --pk 15077974 --param pageNo=1 --param numOfRows=3 --param type=xml
+```
+
+> 엔드포인트 경로는 추측할 수 없는 형태(`HeatWaveCasualtiesRegion/getHeatWaveCasualtiesRegionList`)이고,
+> 틀리면 "없다"가 아니라 404·500이 옵니다. `--pk` 를 주면 포털에서 조회하고, **명세의 필수
+> 요청변수가 빠졌는지 호출 전에 확인**합니다 — 빠진 채로 부르면 data.go.kr은 에러가 아니라
+> 빈 결과를 주기 때문에 데이터가 없는 것과 구분할 수 없습니다.
+
+```bash
 # 계정 인증키 조회 (call 은 생략 시 자동으로 이 키를 씁니다)
 gongctl key
 

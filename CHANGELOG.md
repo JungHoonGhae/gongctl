@@ -5,6 +5,31 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.4.0]
+
+### Added
+
+- **`call --pk` looks the endpoint up instead of you typing one** (MCP `call_api`
+  takes `pk`/`op`). Endpoint paths are not guessable —
+  `HeatWaveCasualtiesRegion/getHeatWaveCasualtiesRegionList` cannot be derived from
+  "지역별 폭염 인명피해" — and a wrong one answers 500 or 404 rather than saying it does
+  not exist, so it reads as a broken API instead of a typo.
+- **Required request variables are checked before the request is spent.** Omitting
+  one makes data.go.kr answer with an *empty result rather than an error*, which is
+  indistinguishable from a dataset that genuinely has no matching rows. Required-ness
+  is read by prefix, because the embedded Swagger document says 필수/옵션 while the
+  rendered HTML table says the portal's own 필/옵 — a check written against one
+  vocabulary silently passes everything described by the other. Parameters the portal
+  never documented block nothing.
+
+### Fixed
+
+- **`describe` no longer double-counts operations.** Some pages render each 상세기능
+  twice — a desktop table and a mobile one — so a one-operation dataset reported two
+  identical operations, which surfaced as an ambiguous choice whose two alternatives
+  were the same call. Byte-identical operations are collapsed; operations sharing an
+  endpoint but documenting different variables are kept.
+
 ## [0.3.0]
 
 ### Added

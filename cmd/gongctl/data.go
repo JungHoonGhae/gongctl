@@ -77,15 +77,28 @@ func describeCmd() *cobra.Command {
 func callCmd() *cobra.Command {
 	var key string
 	var params []string
+	var pk, op string
 	c := &cobra.Command{
-		Use:   "call <endpoint>",
+		Use:   "call [endpoint]",
 		Short: "인증 API 호출 — serviceKey 주입 → GET → XML→JSON",
 		Long: `승인된 OpenAPI 엔드포인트를 호출합니다. --param k=v 로 요청변수를 전달합니다. 인증키는 로그인 세션에서 자동으로 조회하므로
 --key 는 생략할 수 있습니다. 응답은 XML이면 JSON으로 변환해 출력합니다.
 
-예) gongctl call http://apis.data.go.kr/9760000/.../getX --param numOfRows=10`,
-		Args: cobra.ExactArgs(1),
+엔드포인트 URL 대신 --pk 를 주면 포털에서 엔드포인트를 조회합니다. 경로는 추측할 수 없는
+형태(HeatWaveCasualtiesRegion/getHeatWaveCasualtiesRegionList)이고 틀리면 404·500 이 오므로,
+직접 타이핑하기보다 이 방식이 안전합니다. 상세기능이 여럿이면 --op 로 지정하세요.
+--pk 를 쓰면 명세의 필수 요청변수가 빠졌는지도 호출 전에 확인합니다.
+
+예) gongctl call --pk 15077974 --param numOfRows=10
+    gongctl call http://apis.data.go.kr/9760000/.../getX --param numOfRows=10`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && pk == "" {
+				return fmt.Errorf("엔드포인트 URL 또는 --pk 가 필요합니다")
+			}
+			if len(args) > 0 && pk != "" {
+				return fmt.Errorf("엔드포인트 URL 과 --pk 는 함께 쓸 수 없습니다 — 어느 것을 호출할지 하나만 정하세요")
+			}
 			if key == "" {
 				k, err := portal.APIKey(cmd.Context())
 				if err != nil {
@@ -101,14 +114,35 @@ func callCmd() *cobra.Command {
 				}
 				pm[kv[0]] = kv[1]
 			}
-			res, err := apicall.Call(cmd.Context(), newFetchClient(), args[0], pm, key)
+			endpoint := ""
+			if len(args) > 0 {
+				endpoint = args[0]
+			} else {
+				base := flagBaseURL
+				if base == "" {
+					base = portal.BaseURL
+				}
+				resolved, rerr := apicall.Resolve(cmd.Context(), newFetchClient(), base, pk, op)
+				if rerr != nil {
+					return rerr
+				}
+				endpoint = resolved.Endpoint
+				fmt.Fprintf(cmd.ErrOrStderr(), "엔드포인트: %s\n", endpoint)
+				// Missing required variables usually come back as an empty result
+				// rather than an error, so refuse before spending the request.
+				if missing := apicall.MissingRequired(resolved, pm); len(missing) > 0 {
+					return fmt.Errorf("필수 요청변수가 빠졌습니다: %s — `gongctl describe %s` 로 확인하세요",
+						strings.Join(missing, ", "), pk)
+				}
+			}
+			res, err := apicall.Call(cmd.Context(), newFetchClient(), endpoint, pm, key)
 			// The cached key may be stale (reissued in the portal). Drop it and
 			// retry once with a freshly read key before reporting failure.
 			if errors.Is(err, apicall.ErrKeyRejected) && !cmd.Flags().Changed("key") {
 				portal.InvalidateCachedKey()
 				if fresh, kerr := portal.APIKey(cmd.Context()); kerr == nil && fresh != key {
 					fmt.Fprintln(cmd.ErrOrStderr(), "인증키가 거부됐습니다 — 캐시를 버리고 다시 조회해 재시도합니다.")
-					res, err = apicall.Call(cmd.Context(), newFetchClient(), args[0], pm, fresh)
+					res, err = apicall.Call(cmd.Context(), newFetchClient(), endpoint, pm, fresh)
 				}
 			}
 			if res != nil {
@@ -122,5 +156,7 @@ func callCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&key, "key", "", "계정 인증키 (생략 시 로그인 세션에서 자동 조회)")
 	c.Flags().StringArrayVar(&params, "param", nil, "요청변수 k=v (반복 가능)")
+	c.Flags().StringVar(&pk, "pk", "", "publicDataPk — 엔드포인트를 포털에서 조회 (URL 대신)")
+	c.Flags().StringVar(&op, "op", "", "상세기능 이름 (엔드포인트 마지막 경로 조각). 하나뿐이면 생략 가능")
 	return c
 }

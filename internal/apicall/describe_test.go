@@ -25,12 +25,21 @@ func TestDescribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("describe: %v", err)
 	}
-	// Fixture is a real 2-operation dataset (예비후보자 + 후보자), each with its
-	// own apis.data.go.kr endpoint and a 7-row 요청변수 table. Both must survive
-	// — the operation-switcher box (<select>+button, no data) must NOT show up
-	// as a bogus third operation, and neither real operation may vanish.
-	if len(spec.Operations) != 2 {
-		t.Fatalf("want 2 real operations, got %d: %+v", len(spec.Operations), spec.Operations)
+	// This fixture has ONE operation, rendered twice. Its two
+	// .open-api-detail-result sections are identical — same title, same endpoint
+	// (getPoelpcddRegistSttusInfoInqire), same seven request variables — because the
+	// page carries a desktop and a mobile copy of the same table. The fixture holds
+	// exactly one distinct apis.data.go.kr operation path, and so does the live page.
+	//
+	// This assertion previously demanded two, describing them as 예비후보자 + 후보자
+	// with separate endpoints, which the fixture never contained: the earlier
+	// selector fix moved describe from swallowing content to double-counting it, and
+	// the double count was recorded as correct. What must hold is that the real
+	// operation survives with its endpoint and parameters, and that the
+	// operation-switcher box (a <select> and a button, carrying no data) never
+	// appears as an operation of its own.
+	if len(spec.Operations) != 1 {
+		t.Fatalf("want the 1 real operation, got %d: %+v", len(spec.Operations), spec.Operations)
 	}
 	for i, op := range spec.Operations {
 		if !strings.Contains(op.Endpoint, "apis.data.go.kr") {

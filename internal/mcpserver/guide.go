@@ -23,9 +23,15 @@ const GuideDoc = `# gongctl — data.go.kr 사용 가이드
    - **operations 가 비어 있고 note 가 있으면**: 이 API 는 명세를 상세페이지에 싣지 않고 참고문서에만
      둔 경우다. guideDocUrl 을 직접 내려받아(zip/hwp/xlsx) 엔드포인트와 파라미터를 확인하라.
      **절대 파라미터를 추측해서 호출하지 마라** — 조용히 틀린 결과가 나온다.
-5. **call_api(endpoint, params)** — 실제 호출. **key 는 넘기지 않아도 된다** — gongctl 이 로그인
-   세션에서 계정 인증키를 자동으로 가져다 쓴다. 사람에게 인증키를 물어보지 마라.
-   (키 값을 직접 봐야 하면 **get_api_key()**.)
+5. **call_api(pk, params)** — 실제 호출. **endpoint URL 을 지어내지 마라.** pk 를 주면 gongctl 이
+   포털에서 엔드포인트를 조회한다. 경로는 추측 불가능한 형태이고
+   (HeatWaveCasualtiesRegion/getHeatWaveCasualtiesRegionList), 틀리면 "그런 것 없다"가 아니라
+   404·500 이 온다. 상세기능이 여럿이면 op 로 지정하라(엔드포인트 마지막 경로 조각).
+   - pk 로 호출하면 **명세의 필수 요청변수가 빠졌는지 호출 전에 확인**한다. 빠진 채로 부르면
+     data.go.kr 은 에러가 아니라 **빈 결과**를 주기 때문에, 데이터가 없는 것과 구분할 수 없다.
+   - describe_api 에서 이미 엔드포인트를 확보했다면 endpoint 를 그대로 넘겨도 된다.
+   - **key 는 넘기지 않아도 된다** — gongctl 이 로그인 세션에서 계정 인증키를 자동으로 가져다
+     쓴다. 사람에게 인증키를 물어보지 마라. (키 값을 직접 봐야 하면 **get_api_key()**.)
 
 즉 사람의 개입은 최초 gongctl login 한 번뿐이다. 검색 → 신청 → 승인 확인 → 호출까지
 이 도구들로 스스로 끝내라.

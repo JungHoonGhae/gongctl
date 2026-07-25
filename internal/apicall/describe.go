@@ -114,6 +114,8 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 		}
 	})
 
+	spec.Operations = dedupeOperations(spec.Operations)
+
 	// Page-level endpoint fallback: many REST datasets carry the endpoint URL
 	// somewhere on the page while documenting no 요청변수 table at all. Surfacing
 	// the endpoint alone is still factual and gets a caller moving; the note below
@@ -369,4 +371,34 @@ func operationsFromSwagger(doc *goquery.Document) []Operation {
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].Endpoint < ops[j].Endpoint })
 	return ops
+}
+
+// dedupeOperations drops operations that are byte-identical to one already kept.
+// Some portal pages render the same 상세기능 block twice — a PC table and a mobile
+// one, distinguished only by presentation classes — and counting both makes a
+// one-operation dataset look like two, which then reads as an ambiguous choice a
+// caller has no way to resolve (both alternatives are the same call).
+//
+// Only exact duplicates are collapsed: same name, same endpoint, same parameter
+// names in the same order. Two operations that share an endpoint but document
+// different variables are genuinely different and are both kept.
+func dedupeOperations(ops []Operation) []Operation {
+	if len(ops) < 2 {
+		return ops
+	}
+	seen := make(map[string]bool, len(ops))
+	out := make([]Operation, 0, len(ops))
+	for _, op := range ops {
+		names := make([]string, 0, len(op.Params))
+		for _, p := range op.Params {
+			names = append(names, p.Name)
+		}
+		sig := op.Name + "\x00" + op.Endpoint + "\x00" + strings.Join(names, ",")
+		if seen[sig] {
+			continue
+		}
+		seen[sig] = true
+		out = append(out, op)
+	}
+	return out
 }
