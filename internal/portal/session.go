@@ -72,8 +72,14 @@ func loadSession() (*Session, error) {
 	return &s, nil
 }
 
-// clearSession removes the stored cookies and the cached serviceKey (logout).
-// Both are credentials, so logout must take both.
+// clearSession removes everything logout must not leave behind: the extracted
+// cookies, the cached serviceKey, and the Chrome profiles.
+//
+// The profiles matter as much as the files. The login profile accumulates the
+// cookies of whatever the human logged in WITH — an SSO provider's session, for
+// instance — and the headless profile holds the cookies gongctl injected into it.
+// Removing only gongctl's own two files would leave those on disk after the user
+// asked to be logged out.
 func clearSession() error {
 	path, err := sessionPath()
 	if err != nil {
@@ -82,9 +88,16 @@ func clearSession() error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if dir, derr := configDir(); derr == nil {
-		if err := os.Remove(filepath.Join(dir, keyCacheFile)); err != nil && !os.IsNotExist(err) {
-			return err
+	dir, derr := configDir()
+	if derr != nil {
+		return derr
+	}
+	if err := os.Remove(filepath.Join(dir, keyCacheFile)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, profile := range []string{"chrome-profile", "chrome-headless"} {
+		if err := os.RemoveAll(filepath.Join(dir, profile)); err != nil {
+			return fmt.Errorf("브라우저 프로파일 삭제 실패 (%s): %w", profile, err)
 		}
 	}
 	return nil

@@ -30,12 +30,19 @@ func loginCmd() *cobra.Command {
 func logoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "세션 브라우저를 닫고 상태를 정리",
+		Short: "세션 종료 — 브라우저·쿠키·인증키·브라우저 프로파일 전부 삭제",
+		Long: `로그인 세션을 완전히 정리합니다. 다음을 모두 삭제합니다:
+
+  · 저장된 data.go.kr 세션 쿠키와 캐시된 인증키
+  · gongctl 이 만든 Chrome 프로파일 2개(로그인용·headless용)
+    — 로그인 프로파일에는 사람이 로그인에 사용한 SSO 제공자(네이버 등)의
+      쿠키도 함께 쌓이므로, 로그아웃 시 같이 지웁니다.
+  · 실행 중이던 세션 브라우저`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := portal.Logout(cmd.Context()); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.ErrOrStderr(), "세션을 종료했습니다.")
+			fmt.Fprintln(cmd.ErrOrStderr(), "세션을 종료했습니다 — 쿠키·인증키·브라우저 프로파일을 삭제했습니다.")
 			return nil
 		},
 	}
