@@ -190,6 +190,24 @@ func sessionWorks(ctx context.Context, s *Session) bool {
 	return err == nil && isAuthed(html, "")
 }
 
+// refreshSessionFrom re-reads the cookie jar of a browser we just drove and
+// stores it if it still authenticates.
+//
+// The portal rotates JSESSIONID during the 활용신청 flow: the browser ends up
+// holding a different session than the one injected into it, which leaves the
+// copy on disk dead the moment that browser exits. Without this, a single apply
+// silently costs the user their session and forces a re-login.
+func refreshSessionFrom(ctx context.Context, tctx context.Context) {
+	sess, err := extractCookies(tctx)
+	if err != nil {
+		return
+	}
+	if !sessionWorks(ctx, sess) {
+		return // don't overwrite a working session with a worse one
+	}
+	saveSession(sess)
+}
+
 // browserForApply returns a browser to drive the 활용신청 form with. If a session
 // browser is already running it is reused (sess == nil, nothing to inject).
 // Otherwise a headless Chrome is started and the saved session is returned for

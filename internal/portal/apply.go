@@ -76,6 +76,10 @@ func Apply(ctx context.Context, pk, purpose, category string, confirm func(Apply
 		}
 		defer closeBrowser(ctx, st) // headless instance is ours; don't leave it running
 	}
+	// Registered after closeBrowser so it runs BEFORE it (LIFO): the portal rotates
+	// the session during this flow, and that rotated session lives only in this
+	// browser. Capture it or the next command finds a dead cookie on disk.
+	defer refreshSessionFrom(ctx, tctx)
 
 	// Capture any JS dialog (validation alert / success notice) and accept it.
 	var dialogMu sync.Mutex
