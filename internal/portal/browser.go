@@ -144,7 +144,29 @@ func closeBrowser(ctx context.Context, st *daemonState) {
 func Applications(ctx context.Context) ([]Application, error) {
 	if sess, serr := loadSession(); serr == nil {
 		if html, herr := getWithSession(ctx, sess, AccountListPath); herr == nil && isAuthed(html, "") {
-			return parseApplications(html)
+			apps, perr := parseApplications(html)
+			if perr != nil {
+				return nil, perr
+			}
+			// The portal paginates at 10; without this the 11th application
+			// onward vanishes silently, and an agent asking "did I already apply
+			// for this?" gets a wrong answer.
+			total := parseTotalCount(html)
+			for page := 2; len(apps) < total; page++ {
+				more, merr := getWithSession(ctx, sess, fmt.Sprintf("%s?pageIndex=%d", AccountListPath, page))
+				if merr != nil {
+					return nil, merr
+				}
+				batch, berr := parseApplications(more)
+				if berr != nil {
+					return nil, berr
+				}
+				if len(batch) == 0 {
+					break // no progress — stop rather than loop forever
+				}
+				apps = append(apps, batch...)
+			}
+			return apps, nil
 		}
 		// Session expired or insufficient — fall through to the browser, if any.
 	}

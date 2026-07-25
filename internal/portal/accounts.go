@@ -2,6 +2,7 @@ package portal
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -27,6 +28,27 @@ var reStatusPrefix = regexp.MustCompile(`^\[([^\]]+)\]\s*`)
 
 // AccountListPath is the 활용신청 현황 page driven by the browser session.
 const AccountListPath = "/iim/api/selectAcountList.do"
+
+// accountListPageSize is how many applications the portal puts on one page. The
+// list is paginated with ?pageIndex=N, so reading only the first page silently
+// drops everything past the tenth application — see Applications.
+const accountListPageSize = 10
+
+var reTotalCount = regexp.MustCompile(`총\s*<[^>]*>\s*([\d,]+)`)
+
+// parseTotalCount reads the "총 N건" header of the 활용신청 현황 list. Returns 0
+// when the page does not carry it (then the caller falls back to one page).
+func parseTotalCount(body string) int {
+	m := reTotalCount.FindStringSubmatch(body)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
+	if err != nil {
+		return 0
+	}
+	return n
+}
 
 // parseApplications extracts the 활용신청 현황 list items from the page HTML.
 // Split out as a pure function so it can be tested against a fixture without a

@@ -51,3 +51,19 @@ func TestParseApplications(t *testing.T) {
 		t.Errorf("apps[1].Title = %q", apps[1].Title)
 	}
 }
+
+// The list is paginated at 10; the "총 N건" header is what tells Applications
+// there are more pages. If this stops parsing, applications past the tenth
+// vanish silently and an agent's "did I already apply?" check goes wrong.
+func TestParseTotalCount(t *testing.T) {
+	if got := parseTotalCount(`<p>총 <span class="num">16</span>건</p>`); got != 16 {
+		t.Errorf("parseTotalCount = %d, want 16", got)
+	}
+	if got := parseTotalCount(`<p>총 <b>1,234</b>건</p>`); got != 1234 {
+		t.Errorf("parseTotalCount with comma = %d, want 1234", got)
+	}
+	// No header → 0, so the caller reads a single page instead of looping.
+	if got := parseTotalCount(`<p>목록이 없습니다</p>`); got != 0 {
+		t.Errorf("parseTotalCount without header = %d, want 0", got)
+	}
+}
