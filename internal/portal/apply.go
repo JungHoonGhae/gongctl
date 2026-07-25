@@ -54,20 +54,28 @@ func Apply(ctx context.Context, pk, purpose, category string, confirm func(Apply
 	if category == "" {
 		category = PurposeResearch
 	}
-	st, err := loadState()
+	// Submission has to run in a browser: gongctl drives the portal's own
+	// fn_save() so the page builds and validates the payload (see
+	// docs/adr/0001). Reuse a live browser if there is one; otherwise start a
+	// headless one and inject the saved session, so no window appears.
+	st, sess, err := browserForApply(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if !wsAlive(st.Port) {
-		return nil, ErrNotLoggedIn
 	}
 
 	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
 	defer cancelAlloc()
 	tctx, cancelTab := chromedp.NewContext(allocCtx)
 	defer cancelTab()
-	tctx, tcancel := context.WithTimeout(tctx, 60*time.Second)
+	tctx, tcancel := context.WithTimeout(tctx, 90*time.Second)
 	defer tcancel()
+
+	if sess != nil {
+		if err := injectSession(tctx, sess); err != nil {
+			return nil, fmt.Errorf("세션 주입 실패: %w", err)
+		}
+		defer closeBrowser(ctx, st) // headless instance is ours; don't leave it running
+	}
 
 	// Capture any JS dialog (validation alert / success notice) and accept it.
 	var dialogMu sync.Mutex

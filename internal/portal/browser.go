@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/chromedp"
 )
 
@@ -22,7 +23,7 @@ const LoginTimeout = 5 * time.Minute
 // reuses) gongctl's detached Chrome, opens the login page, and waits until the
 // session can actually load an authenticated page. The browser is left running
 // so later commands re-attach to it. progress receives status lines (may be nil).
-func Login(ctx context.Context, progress io.Writer) error {
+func Login(ctx context.Context, progress io.Writer, keepBrowser bool) error {
 	logln := func(format string, a ...any) {
 		if progress != nil {
 			fmt.Fprintf(progress, format+"\n", a...)
@@ -32,14 +33,18 @@ func Login(ctx context.Context, progress io.Writer) error {
 	st, _ := loadState()
 	if st == nil || !wsAlive(st.Port) {
 		logln("브라우저를 띄웁니다… 열리는 창에서 data.go.kr 에 로그인하세요 (네이버/카카오/아이디).")
-		if _, err := launchBrowser(BaseURL + "/sso/login.do"); err != nil {
+		cmd, err := launchBrowser(BaseURL + "/sso/login.do")
+		if err != nil {
 			return err
 		}
 		ws, err := discoverWS(ctx, debugPort, 20*time.Second)
 		if err != nil {
 			return err
 		}
-		st = &daemonState{WebSocketURL: ws, Port: debugPort}
+		// Record the PID: closing the window is not enough to end the process
+		// (the debug port keeps Chrome alive with zero tabs), so closeBrowser
+		// needs something to signal.
+		st = &daemonState{WebSocketURL: ws, Port: debugPort, PID: cmd.Process.Pid}
 		if err := saveState(st); err != nil {
 			return err
 		}
@@ -49,19 +54,40 @@ func Login(ctx context.Context, progress io.Writer) error {
 
 	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
 	defer cancelAlloc()
-	// One reused background tab for probing — avoids flicker while the user logs
-	// in on their own tab.
-	tctx, cancelTab := chromedp.NewContext(allocCtx)
-	defer cancelTab()
 
 	logln("로그인 완료를 기다리는 중… (최대 %d분)", int(LoginTimeout.Minutes()))
 	deadline := time.Now().Add(LoginTimeout)
 	tick := 0
 	for time.Now().Before(deadline) {
-		html, loc, err := probeIn(tctx, AccountListPath)
+		// A fresh tab per poll: each probe is bounded and disposable, so a page
+		// that never finishes loading costs one iteration instead of wedging the
+		// whole wait (a reused tab cannot carry a timeout — cancelling it closes
+		// the tab, see probeIn).
+		html, loc, err, tctx, cancelTab := probeOnce(allocCtx)
 		if err == nil && isAuthed(html, loc) {
-			logln("✅ 로그인 확인 — 세션이 살아있습니다.")
-			return saveState(st)
+			logln("✅ 로그인 확인.")
+			if err := saveState(st); err != nil {
+				return err
+			}
+			// Copy the session out of the browser so later commands don't need a
+			// window open. Verified before we close anything — if the cookies
+			// don't authenticate on their own, keep the browser as the fallback.
+			if keepBrowser {
+				logln("   (--keep-browser: 브라우저를 열어 둡니다.)")
+				return nil
+			}
+			sess, cerr := extractCookies(tctx)
+			if cerr == nil && sessionWorks(ctx, sess) {
+				if err := saveSession(sess); err != nil {
+					return err
+				}
+				cancelTab()
+				closeBrowser(ctx, st)
+				logln("   세션을 저장하고 브라우저를 닫았습니다 — 이후 명령은 창 없이 동작합니다.")
+				return nil
+			}
+			logln("   (쿠키만으로는 인증이 유지되지 않아 브라우저를 열어 둡니다.)")
+			return nil
 		}
 		tick++
 		if tick%5 == 0 {
@@ -76,8 +102,53 @@ func Login(ctx context.Context, progress io.Writer) error {
 	return fmt.Errorf("로그인 시간 초과 (%d분) — 열린 창에서 로그인 후 다시 시도하세요", int(LoginTimeout.Minutes()))
 }
 
-// Applications re-attaches to the live browser and reads the 활용신청 현황 list.
+// closeBrowser shuts the session browser down. Best-effort: the point is to get
+// the window off the user's screen once its cookies have been copied out.
+//
+// It sends the CDP Browser.close command rather than cancelling the chromedp
+// context: with a RemoteAllocator gongctl only ATTACHED to this browser, so
+// cancelling merely detaches and leaves the window on screen (the bug the old
+// Logout shipped).
+func closeBrowser(ctx context.Context, st *daemonState) {
+	if !wsAlive(st.Port) {
+		return
+	}
+	// Ask Chrome to close itself first so it flushes its profile. This needs a
+	// tab to attach to; with zero tabs it fails harmlessly and the kill below
+	// does the work.
+	func() {
+		allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
+		defer cancel()
+		tctx, tcancel := chromedp.NewContext(allocCtx)
+		defer tcancel()
+		chromedp.Run(tctx, chromedp.ActionFunc(func(c context.Context) error {
+			return browser.Close().Do(c)
+		}))
+	}()
+	for i := 0; i < 20 && wsAlive(st.Port); i++ {
+		time.Sleep(150 * time.Millisecond)
+	}
+	// Chrome lingers with the debug port open even after its last window closes,
+	// so signal the process tree when it is still answering.
+	if wsAlive(st.Port) && st.PID > 0 {
+		killTree(st.PID)
+		for i := 0; i < 20 && wsAlive(st.Port); i++ {
+			time.Sleep(150 * time.Millisecond)
+		}
+	}
+}
+
+// Applications reads the 활용신청 현황 list. It prefers the saved session over
+// plain HTTP (no browser needed) and falls back to driving a live browser over
+// CDP when only that is available.
 func Applications(ctx context.Context) ([]Application, error) {
+	if sess, serr := loadSession(); serr == nil {
+		if html, herr := getWithSession(ctx, sess, AccountListPath); herr == nil && isAuthed(html, "") {
+			return parseApplications(html)
+		}
+		// Session expired or insufficient — fall through to the browser, if any.
+	}
+
 	st, err := loadState()
 	if err != nil {
 		return nil, err
@@ -104,21 +175,13 @@ func Applications(ctx context.Context) ([]Application, error) {
 	return parseApplications(html)
 }
 
-// Logout closes the live browser and clears saved state.
+// Logout closes any live browser and clears the saved state and session cookies.
 func Logout(ctx context.Context) error {
-	st, err := loadState()
-	if err != nil {
-		return nil // nothing to do
+	if st, err := loadState(); err == nil {
+		closeBrowser(ctx, st)
 	}
-	if wsAlive(st.Port) {
-		allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
-		defer cancel()
-		tctx, tcancel := chromedp.NewContext(allocCtx)
-		defer tcancel()
-		// best-effort browser close
-		chromedp.Run(tctx, chromedp.ActionFunc(func(ctx context.Context) error {
-			return chromedp.Cancel(tctx)
-		}))
+	if err := clearSession(); err != nil {
+		return err
 	}
 	path, _ := statePath()
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -168,4 +231,15 @@ func isAuthed(html, loc string) bool {
 		return false
 	}
 	return strings.Contains(html, "mypage-dataset-list") || strings.Contains(html, "활용신청 현황")
+}
+
+// probeOnce opens a disposable tab, probes the 활용신청 현황 page with a hard
+// bound, and hands the tab back so a successful caller can still read cookies
+// from it. The caller MUST call cancelTab.
+func probeOnce(allocCtx context.Context) (html, loc string, err error, tctx context.Context, cancelTab context.CancelFunc) {
+	tabCtx, cancel := chromedp.NewContext(allocCtx)
+	bounded, cancelBound := context.WithTimeout(tabCtx, 20*time.Second)
+	cancelTab = func() { cancelBound(); cancel() }
+	html, loc, err = probeIn(bounded, AccountListPath)
+	return html, loc, err, bounded, cancelTab
 }

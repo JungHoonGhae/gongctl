@@ -80,16 +80,20 @@ Claude Desktop / 기타 MCP 클라이언트 설정 예시:
 
 ## 보안 주의
 
-`gongctl login`은 실제 Chrome를 원격 디버깅 포트(`127.0.0.1:9333`)로 띄우고, 로그인 세션을
-유지하기 위해 그 브라우저를 **백그라운드로 계속 살려둡니다**. 이 프로세스는 gongctl 종료 후에도
-생존하며 인증된 data.go.kr 세션(승인된 API의 serviceKey 열람 가능)을 들고 있습니다.
+`gongctl login`은 브라우저 창을 한 번 띄웁니다(정부 SSO는 자동화하지 않습니다). 로그인이 확인되면
+gongctl이 세션 쿠키를 복사해 저장하고 **그 브라우저를 종료합니다** — 이후 명령은 창 없이 동작합니다.
 
-- CDP 포트는 loopback에만 바인딩되며, `--remote-allow-origins`를 **설정하지 않습니다**. 따라서
-  악성 웹페이지가 보내는 Origin 헤더 붙은 WebSocket 연결은 Chrome이 기본 거부합니다(HTTP 403).
-  chromedp는 Origin 없이 붙으므로 재부착에는 영향이 없습니다. (검증: `proto/cdp-origin` 스파이크 —
-  `*`이면 외부 Origin이 101로 수락되지만, 미설정이면 403으로 거부.)
-- 그래도 작업이 끝나면 `gongctl logout`으로 세션 브라우저를 닫는 습관을 권장합니다.
-- 인증키는 gongctl이 로그·파일에 남기지 않습니다(전송 실패 에러 메시지에서도 마스킹).
+- **읽기**(`applications`·`search`·`describe`·`doctor`)는 브라우저 없이 순수 HTTP로 처리됩니다.
+- **활용신청 제출**(`apply`)만 브라우저가 필요합니다(포털 폼의 검증 로직을 그대로 구동 — ADR 0001).
+  이때 gongctl은 **headless** Chrome을 잠깐 띄워 저장된 세션을 주입하고, 끝나면 정리합니다.
+  화면에는 아무것도 보이지 않습니다.
+- 세션 쿠키는 `~/.config/gongctl/datagokr-session.json`(0600)에 저장됩니다 — 자격증명이므로
+  작업이 끝나면 `gongctl logout`으로 지우세요. 포털 세션이 만료되면 `login`을 다시 하면 됩니다.
+- 쿠키만으로 인증이 유지되지 않는 경우에는 브라우저를 열어 둔 채 CDP로 동작하도록 자동 폴백합니다
+  (`--keep-browser`로 강제할 수도 있습니다).
+- CDP 포트는 loopback 전용이며 `--remote-allow-origins`를 **설정하지 않습니다** — 악성 웹페이지의
+  Origin 붙은 WebSocket 연결은 Chrome이 403으로 거부합니다(`proto/cdp-origin` 스파이크로 검증).
+- 인증키는 로그·파일에 남기지 않습니다(전송 실패 에러 메시지에서도 마스킹).
 
 ## 라이선스
 

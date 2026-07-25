@@ -8,20 +8,23 @@ import (
 )
 
 func loginCmd() *cobra.Command {
-	return &cobra.Command{
+	var keepBrowser bool
+	c := &cobra.Command{
 		Use:   "login",
 		Short: "브라우저로 data.go.kr 로그인 (세션 유지)",
 		Long: `브라우저 창을 띄워 data.go.kr 에 로그인합니다. 로그인이 끝나면 gongctl 이
 그 브라우저를 백그라운드로 유지하고, 이후 apply/applications 등이 그 세션에
 다시 붙어 동작합니다. 키체인 비밀번호는 묻지 않습니다.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := portal.Login(cmd.Context(), cmd.ErrOrStderr()); err != nil {
+			if err := portal.Login(cmd.Context(), cmd.ErrOrStderr(), keepBrowser); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.ErrOrStderr(), "   이제 `gongctl applications` 로 활용신청 현황을 볼 수 있습니다.")
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&keepBrowser, "keep-browser", false, "로그인 후 브라우저를 닫지 않음 (디버깅용)")
+	return c
 }
 
 func logoutCmd() *cobra.Command {

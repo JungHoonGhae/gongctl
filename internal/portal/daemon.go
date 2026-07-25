@@ -12,16 +12,20 @@ import (
 	"time"
 )
 
-// The session lives in a long-running browser, not in extracted cookies. data.go.kr's
-// auth cookies are session-scoped (deleted when the browser closes), so gongctl
-// keeps one Chrome instance alive with the remote-debugging port open and
-// re-attaches to it over CDP for each command — the same approach as
-// chrome-cdp-skill / agent-browser. This sidesteps OS-keychain cookie
-// decryption (Chrome serves its own session), needs no re-login between
-// commands, and never replays the SSO handshake by hand.
+// Browser lifecycle. The human logs in once in a visible Chrome (government SSO
+// is not automated); gongctl then copies the session cookies out (session.go) and
+// closes that window, so nothing stays on screen. Reads go over plain HTTP with
+// those cookies, and the one flow that still needs a browser — driving the
+// 활용신청 form's own JS — starts a short-lived headless Chrome and injects them.
+// A visible browser is only kept alive as a fallback, when the cookies alone turn
+// out not to authenticate.
 
-// debugPort is the fixed CDP remote-debugging port for gongctl's browser.
+// debugPort is the fixed CDP remote-debugging port for gongctl's login browser.
 const debugPort = 9333
+
+// headlessPort is a separate port for the short-lived headless browser that
+// drives 활용신청 submission, so it never collides with a login browser.
+const headlessPort = 9334
 
 // daemonState records the running browser so later commands can re-attach.
 type daemonState struct {
@@ -149,6 +153,39 @@ func launchBrowser(startURL string) (*exec.Cmd, error) {
 	setDetached(cmd) // OS별로 gongctl 프로세스 그룹에서 분리 (browser 가 gongctl 종료 후에도 생존)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("브라우저 실행 실패: %w", err)
+	}
+	return cmd, nil
+}
+
+// launchHeadless starts a throwaway headless Chrome for driving the 활용신청 form.
+// It uses its own profile (no login state — the caller injects the session
+// cookies) and is not detached: it dies with gongctl if the caller forgets to
+// close it, since nothing should outlive a single submission.
+func launchHeadless() (*exec.Cmd, error) {
+	chrome, err := findChrome()
+	if err != nil {
+		return nil, err
+	}
+	dir, err := configDir()
+	if err != nil {
+		return nil, err
+	}
+	profile := filepath.Join(dir, "chrome-headless")
+	if err := os.MkdirAll(profile, 0o700); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(chrome,
+		fmt.Sprintf("--remote-debugging-port=%d", headlessPort),
+		"--user-data-dir="+profile,
+		"--headless=new",
+		"--password-store=basic",
+		"--use-mock-keychain",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"about:blank",
+	)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("headless 브라우저 실행 실패: %w", err)
 	}
 	return cmd, nil
 }

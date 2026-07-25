@@ -27,7 +27,9 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 - **MCP tool 5**: search_datasets · list_applications · apply · describe_api · call_api.
 - **인증키**: data.go.kr은 **계정당 일반 인증키 하나**(첫 신청 시 발급). 엔드포인트별 매칭 불필요.
   Encoding/Decoding 키 함정 있음 — 잘못 쓰면 조용히 실패, 에러 힌트로 surface.
-- **로그인**: 정부 SSO는 자동화 안 함. 사람이 브라우저 1회(`gongctl login`, CDP-attach 데몬).
+- **로그인**: 정부 SSO는 자동화 안 함. 사람이 브라우저 1회(`gongctl login`) → **쿠키 추출 후 브라우저 종료**.
+  읽기는 순수 HTTP(`internal/portal/session.go`), `apply`만 headless Chrome에 쿠키 주입해 폼 구동.
+  tossinvest-cli의 storage-state 패턴을 이식(단, Python helper 없이 chromedp in-process).
 
 ## kvote에서 복사 이식할 것 (검증된 코드)
 
