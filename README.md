@@ -49,13 +49,21 @@ gongctl applications -f table
 gongctl describe <PK>
 
 # 6. 실제 호출 (XML 응답도 JSON으로 변환해 돌려줍니다)
-gongctl call <endpoint> --key <인증키> --param numOfRows=5
+gongctl call <endpoint> --param numOfRows=5   # 인증키 자동
 ```
 
 ```bash
+# 계정 인증키 조회 (call 은 생략 시 자동으로 이 키를 씁니다)
+gongctl key
+
 # 스크래핑이 아직 살아있는지 점검 (data.go.kr HTML 변경 감지, CI용 exit 1)
 gongctl doctor -f table
 ```
+
+> **사람의 개입은 `gongctl login` 한 번뿐입니다.** 검색 → 활용신청 → 승인 확인 → 인증키 획득 →
+> 호출까지 에이전트가 스스로 끝냅니다. 인증키를 사람이 복사해 붙여넣을 필요가 없습니다.
+> (참고: 방금 승인된 API는 게이트웨이 반영에 수 분~1시간 걸려 403이 날 수 있습니다 —
+> 키 문제가 아니며, gongctl이 그렇게 안내합니다.)
 
 `gongctl status` / `gongctl logout` / `gongctl version`도 있습니다.
 

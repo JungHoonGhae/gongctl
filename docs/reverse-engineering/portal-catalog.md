@@ -30,7 +30,7 @@ Verified against the live portal on **2026-07-25** with an authenticated session
 | `public` | GET | `/sso/login.do` | login entry page | `login` opens this for the human |
 | `auth` | GET | `/sso/profile.do` | **SSO trampoline** — auto-submitting form, needs JS | probe loops settle past it |
 | `auth` | GET | `/iim/api/selectAcountList.do` | 활용신청 현황 list | `applications`; also the auth probe |
-| `auth` | GET | `/iim/api/selectApiKeyList.do` | 인증키 발급현황 (the serviceKey) | not wired yet — see gap below |
+| `auth` | GET | `/iim/api/selectApiKeyList.do` | 인증키 발급현황 (the serviceKey) | `key` / MCP `get_api_key`; `call` auto-injects it. Parse `#pblisrCrtfcKeyPlain` (hidden input = the ACTIVE key; the table also lists superseded ones). **Note the markup has a duplicate `value` attribute — take the first.** |
 | `precondition` | GET | `/tcs/dss/redirectDevAcountRequestForm.do?publicDataPk={pk}&isBusinessApply=N` | 활용신청 form | `apply`; needs cookie `currentMyMenuId=M020105`, else bounces to `index.do` |
 | `driven` | POST | `/iim/api/saveDevAcountRequest.do` | 활용신청 submit (AJAX) | **not called directly** — `apply` invokes the form's `fn_save()` so the page builds/validates the payload (ADR 0001) |
 | `public` | GET | `/tcs/dss/selectDataSetList.do?dType=&org=&keyword=&currentPage=&perPage=` | dataset search | `search` (plain HTTP, no browser) |
@@ -68,9 +68,15 @@ To add or re-verify a row:
    submitting, so you learn the endpoint without mutating the account.
 4. Record the path, its status, the preconditions, and the date verified.
 
+## Gateway propagation
+
+A freshly approved API answers **403 Forbidden** at `apis.data.go.kr` for a while:
+the portal auto-approves instantly, but the gateway takes minutes (up to ~1 hour)
+to accept the key for that service. Verified 2026-07-25 — an API applied for
+minutes earlier returned 403 while one applied ~2 hours earlier returned 200 with
+the same key. `call` surfaces this as a hint so it is not mistaken for a key error.
+
 ## Known gaps
 
-- **serviceKey is not read programmatically.** It lives on
-  `/iim/api/selectApiKeyList.do`, but `applications` does not parse it, so
-  `call --key` still needs the key pasted by hand. Wiring this would close the
-  last manual step in the search → apply → describe → call chain.
+- **심의(manual-review) applications** are not handled — auto-approved APIs only.
+  `list_applications` shows their status; approval and re-call are up to the user.

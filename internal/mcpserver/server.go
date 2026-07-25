@@ -34,7 +34,10 @@ type describeIn struct {
 type callIn struct {
 	Endpoint string            `json:"endpoint" jsonschema:"full apis.data.go.kr endpoint URL"`
 	Params   map[string]string `json:"params,omitempty" jsonschema:"request variables as key/value"`
-	Key      string            `json:"key" jsonschema:"account serviceKey (인증키)"`
+	Key      string            `json:"key,omitempty" jsonschema:"account serviceKey — omit it and gongctl fetches the account key from the login session"`
+}
+type keyOut struct {
+	ServiceKey string `json:"serviceKey"`
 }
 type appsOut struct {
 	Applications []portal.Application `json:"applications"`
@@ -105,14 +108,33 @@ func New(deps Deps) *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "call_api",
-		Description: "승인된 endpoint 를 serviceKey 주입 후 호출한다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인. 키 오류면 Encoding/Decoding 형태를 바꿔 재시도.",
+		Description: "승인된 endpoint 를 호출한다. key 를 생략하면 로그인 세션에서 계정 인증키를 자동으로 가져다 쓴다 — 사람에게 키를 물어볼 필요가 없다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in callIn) (*mcp.CallToolResult, *apicall.CallResult, error) {
-		res, err := apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, in.Key)
+		key := in.Key
+		if key == "" {
+			k, kerr := portal.APIKey(ctx)
+			if kerr != nil {
+				return errResult("인증키를 얻지 못했습니다: " + kerr.Error()), nil, nil
+			}
+			key = k
+		}
+		res, err := apicall.Call(ctx, deps.Fetch, in.Endpoint, in.Params, key)
 		if err != nil {
 			// surface the hint but still return the body
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, res, nil
 		}
 		return nil, res, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_api_key",
+		Description: "계정 인증키(serviceKey)를 조회한다. 계정당 하나이며 첫 활용신청 승인 시 발급되어 모든 승인 API에 공통. call_api 는 이 키를 자동으로 쓰므로, 키를 직접 보고 싶을 때만 호출하면 된다.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyIn) (*mcp.CallToolResult, *keyOut, error) {
+		key, err := portal.APIKey(ctx)
+		if err != nil {
+			return errResult(err.Error()), nil, nil
+		}
+		return nil, &keyOut{ServiceKey: key}, nil
 	})
 
 	s.AddResource(&mcp.Resource{

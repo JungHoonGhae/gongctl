@@ -9,7 +9,7 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 - 설계 스펙: `docs/superpowers/specs/2026-07-08-gongctl-design.md`, 실행계획:
   `docs/superpowers/plans/2026-07-23-gongctl-implementation.md`.
 - 구현: `internal/portal`(활용신청 CDP 자동화 이식 + 검색), `internal/apicall`(신규 describe/call),
-  `internal/mcpserver`(5 tool + guide), `cmd/gongctl`(11명령: +doctor), goreleaser/CI/install. 테스트 그린.
+  `internal/mcpserver`(6 tool + guide), `cmd/gongctl`(12명령: +doctor,key), goreleaser/CI/install. 테스트 그린.
 - **배포**: GitHub repo 생성·push 완료(github.com/JungHoonGhae/gongctl, public, CI green), tap repo
   `homebrew-gongctl` 생성, CHANGELOG 0.1.0 추가, goreleaser check·snapshot 통과.
 - **남은 것 (사용자 액션)**: ① `DOPPLER_TOKEN` 시크릿 + Doppler에 `HOMEBREW_TAP_TOKEN`(tap 쓰기 PAT)
@@ -24,7 +24,9 @@ Go CLI + MCP. 사람이 포털 UI를 한 번도 안 건드리게 하는 것이 �
 - **호출 설계**: surface-only + 에이전트 주도. 도구는 결정적인 것만(로그인·활용신청·키 주입·HTTP·
   XML→JSON), 이질적 API 명세는 파싱하지 않고 에이전트에게 surface. (kvote 국정수행 PDF 교훈.)
 - **인터페이스**: CLI(사람) + MCP(에이전트), 같은 백엔드. kvote 패턴.
-- **MCP tool 5**: search_datasets · list_applications · apply · describe_api · call_api.
+- **MCP tool 6**: search_datasets · list_applications · apply · describe_api · call_api · get_api_key.
+  `call_api`는 key 생략 시 세션에서 자동 조회 → **검색→신청→승인확인→키→호출이 사람 개입 0**
+  (로그인 1회 제외). 인증키는 `/iim/api/selectApiKeyList.do`의 `#pblisrCrtfcKeyPlain`에서 파싱.
 - **인증키**: data.go.kr은 **계정당 일반 인증키 하나**(첫 신청 시 발급). 엔드포인트별 매칭 불필요.
   Encoding/Decoding 키 함정 있음 — 잘못 쓰면 조용히 실패, 에러 힌트로 surface.
 - **로그인**: 정부 SSO는 자동화 안 함. 사람이 브라우저 1회(`gongctl login`) → **쿠키 추출 후 브라우저 종료**.

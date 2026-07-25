@@ -74,12 +74,19 @@ func callCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "call <endpoint>",
 		Short: "인증 API 호출 — serviceKey 주입 → GET → XML→JSON",
-		Long: `승인된 OpenAPI 엔드포인트를 호출합니다. --key 로 계정 인증키를,
---param k=v 로 요청변수를 전달합니다. 응답은 XML이면 JSON으로 변환해 출력합니다.
+		Long: `승인된 OpenAPI 엔드포인트를 호출합니다. --param k=v 로 요청변수를 전달합니다. 인증키는 로그인 세션에서 자동으로 조회하므로
+--key 는 생략할 수 있습니다. 응답은 XML이면 JSON으로 변환해 출력합니다.
 
-예) gongctl call http://apis.data.go.kr/9760000/.../getX --key <KEY> --param numOfRows=10`,
+예) gongctl call http://apis.data.go.kr/9760000/.../getX --param numOfRows=10`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if key == "" {
+				k, err := portal.APIKey(cmd.Context())
+				if err != nil {
+					return fmt.Errorf("인증키를 얻지 못했습니다 (--key 로 직접 지정하거나 `gongctl login` 후 재시도): %w", err)
+				}
+				key = k
+			}
 			pm := map[string]string{}
 			for _, p := range params {
 				kv := strings.SplitN(p, "=", 2)
@@ -98,8 +105,7 @@ func callCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&key, "key", "", "계정 인증키 (serviceKey)")
+	c.Flags().StringVar(&key, "key", "", "계정 인증키 (생략 시 로그인 세션에서 자동 조회)")
 	c.Flags().StringArrayVar(&params, "param", nil, "요청변수 k=v (반복 가능)")
-	c.MarkFlagRequired("key")
 	return c
 }

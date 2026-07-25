@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -54,6 +55,15 @@ func Call(ctx context.Context, f *fetch.Client, endpoint string, params map[stri
 
 	res := &CallResult{Status: resp.Status, ContentType: resp.ContentType}
 	res.Body = decodeBody(resp.ContentType, resp.Body)
+
+	// A just-approved API answers 403 at the gateway for a while: data.go.kr
+	// auto-approves the application instantly but takes minutes to propagate it.
+	// Surface that reading so a caller (or agent) doesn't misdiagnose its key.
+	if resp.Status == http.StatusForbidden {
+		return res, fmt.Errorf("data.go.kr 게이트웨이가 403(Forbidden) — 방금 승인된 API는 " +
+			"게이트웨이 반영까지 수 분~1시간 걸릴 수 있습니다. 인증키 자체가 유효한지는 " +
+			"이미 승인된 다른 API로 확인해 보세요 (키 문제가 아닐 수 있습니다)")
+	}
 
 	// Error surface: never swallow. If the body signals an unregistered key,
 	// return the surfaced result plus a hint — the Encoding/Decoding trap.

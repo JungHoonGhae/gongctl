@@ -243,3 +243,24 @@ func probeOnce(allocCtx context.Context) (html, loc string, err error, tctx cont
 	html, loc, err = probeIn(bounded, AccountListPath)
 	return html, loc, err, bounded, cancelTab
 }
+
+// probeViaBrowser fetches a portal path through the live browser. Used as the
+// fallback when the saved session cookies are not enough (see Applications,
+// APIKey), so both share one CDP path instead of duplicating tab setup.
+func probeViaBrowser(ctx context.Context, st *daemonState, path string) (string, error) {
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, st.WebSocketURL)
+	defer cancelAlloc()
+	tctx, cancelTab := chromedp.NewContext(allocCtx)
+	defer cancelTab()
+	tctx, tcancel := context.WithTimeout(tctx, 40*time.Second)
+	defer tcancel()
+
+	html, loc, err := probeIn(tctx, path)
+	if err != nil {
+		return "", err
+	}
+	if strings.Contains(loc, "common-login") || strings.Contains(loc, "auth.data.go.kr") {
+		return "", ErrNotLoggedIn
+	}
+	return html, nil
+}
