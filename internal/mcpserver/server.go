@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
 	"github.com/JungHoonGhae/gongctl/internal/catalog"
@@ -40,7 +41,10 @@ type callIn struct {
 	PK       string            `json:"pk,omitempty" jsonschema:"publicDataPk — gongctl looks the endpoint up from the portal instead of you typing or guessing a URL. Use this unless you already hold an endpoint from describe_api"`
 	Op       string            `json:"op,omitempty" jsonschema:"which operation, named by the last path segment of its endpoint (e.g. getHeatWaveCasualtiesRegionList). Omit when the dataset has only one"`
 	Params   map[string]string `json:"params,omitempty" jsonschema:"request variables as key/value"`
-	Key      string            `json:"key,omitempty" jsonschema:"account serviceKey — omit it and gongctl fetches the account key from the login session"`
+	// Bounded well below apicall.MaxPropagationWait: a tool call that blocks for an
+	// hour looks like a hung agent, and the caller can simply ask again.
+	WaitSeconds int    `json:"waitSeconds,omitempty" jsonschema:"wait up to this many seconds for a just-approved API to propagate, retrying the 403 (max 300). Use it right after apply; omit it otherwise"`
+	Key         string `json:"key,omitempty" jsonschema:"account serviceKey — omit it and gongctl fetches the account key from the login session"`
 }
 type catalogIn struct {
 	Query string `json:"query" jsonschema:"space-separated terms; every term must appear in the title, publisher or description"`
@@ -64,6 +68,10 @@ type keyOut struct {
 type appsOut struct {
 	Applications []portal.Application `json:"applications"`
 }
+
+// maxToolWait caps how long call_api will block. Propagation can take longer than
+// this; the agent is told to call again rather than have a tool hold the session.
+const maxToolWait = 5 * time.Minute
 
 // emptyIn is the input type for tools that take no arguments. mcp.AddTool
 // infers a JSON schema from the struct even with zero fields, so this is
@@ -161,7 +169,11 @@ func New(deps Deps) *mcp.Server {
 		Description: "승인된 API 를 호출한다. **endpoint URL 을 지어내지 마라** — pk 를 주면 " +
 			"gongctl 이 포털에서 엔드포인트를 조회하고, 명세의 필수 요청변수가 빠졌는지 호출 전에 " +
 			"확인한다(빠지면 data.go.kr 은 에러 대신 빈 결과를 주므로 스스로 알아채기 어렵다). " +
-			"상세기능이 여럿이면 op 로 지정하라(엔드포인트 마지막 경로 조각). key 를 생략하면 로그인 세션에서 계정 인증키를 자동으로 가져다 쓴다 — 사람에게 키를 물어볼 필요가 없다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인.",
+			"상세기능이 여럿이면 op 로 지정하라(엔드포인트 마지막 경로 조각). " +
+			"**방금 apply 한 API 라면 waitSeconds=300 을 줘라** — 승인은 즉시지만 게이트웨이 반영에 " +
+			"보통 7~10분 걸려 403 이 오고, gongctl 이 그 동안 1분 간격으로 재시도한다. " +
+			"그래도 403 이면 실패가 아니라 아직 반영 전이니 잠시 후 다시 호출하라(키를 바꾸거나 " +
+			"다시 신청하지 마라). key 를 생략하면 로그인 세션에서 계정 인증키를 자동으로 가져다 쓴다 — 사람에게 키를 물어볼 필요가 없다. 응답 XML 은 JSON 으로 변환. body 의 resultCode 로 성공(00) 여부 확인.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in callIn) (*mcp.CallToolResult, *apicall.CallResult, error) {
 		endpoint := in.Endpoint
 		if endpoint == "" {
@@ -186,13 +198,23 @@ func New(deps Deps) *mcp.Server {
 			}
 			key = k
 		}
-		res, err := apicall.Call(ctx, deps.Fetch, endpoint, in.Params, key)
+		doCall := func(k string) (*apicall.CallResult, error) {
+			if in.WaitSeconds <= 0 {
+				return apicall.Call(ctx, deps.Fetch, endpoint, in.Params, k)
+			}
+			w := time.Duration(in.WaitSeconds) * time.Second
+			if w > maxToolWait {
+				w = maxToolWait
+			}
+			return apicall.CallWaiting(ctx, deps.Fetch, endpoint, in.Params, k, w, nil)
+		}
+		res, err := doCall(key)
 		// A rejected key may just be a stale cached copy (the user reissued it).
 		// Drop it and read the key again — once, so a genuinely bad key still fails.
 		if errors.Is(err, apicall.ErrKeyRejected) && in.Key == "" {
 			portal.InvalidateCachedKey()
 			if fresh, kerr := portal.APIKey(ctx); kerr == nil && fresh != key {
-				res, err = apicall.Call(ctx, deps.Fetch, endpoint, in.Params, fresh)
+				res, err = doCall(fresh)
 			}
 		}
 		if err != nil {

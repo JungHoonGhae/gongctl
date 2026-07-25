@@ -5,6 +5,26 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.6.0]
+
+### Added
+
+- **`call --wait` (MCP `waitSeconds`) waits out the gateway propagation.** An
+  application is granted the instant it is made and the API still answers 403 for
+  minutes — 7 to 10 in every run measured here. Previously the only handling was an
+  error message asking the caller to retry, which put a timed retry loop in every
+  agent and script that uses this, over behaviour belonging to the portal. Now the
+  request is repeated once a minute until it answers or the wait runs out.
+
+  The 403 became its own sentinel, separate from a rejected key, because the two
+  demand opposite responses: propagation is fixed by repeating the identical request,
+  a rejected key never is. Only propagation is retried — a bad key or malformed
+  request still returns on the first attempt rather than being buried under a
+  ten-minute wait. Running out of time is reported as "not propagated yet", with the
+  elapsed time and attempt count, so a caller knows to ask again rather than re-apply.
+  Capped at an hour (the portal's own ceiling); MCP caps at five minutes, since a
+  tool call that blocks for an hour reads as a hung agent.
+
 ## [0.5.0]
 
 ### Added

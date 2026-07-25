@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/JungHoonGhae/gongctl/internal/apicall"
 	"github.com/JungHoonGhae/gongctl/internal/output"
@@ -78,6 +79,7 @@ func callCmd() *cobra.Command {
 	var key string
 	var params []string
 	var pk, op string
+	var wait time.Duration
 	c := &cobra.Command{
 		Use:   "call [endpoint]",
 		Short: "인증 API 호출 — serviceKey 주입 → GET → XML→JSON",
@@ -89,7 +91,11 @@ func callCmd() *cobra.Command {
 직접 타이핑하기보다 이 방식이 안전합니다. 상세기능이 여럿이면 --op 로 지정하세요.
 --pk 를 쓰면 명세의 필수 요청변수가 빠졌는지도 호출 전에 확인합니다.
 
+신청 직후에는 게이트웨이 반영에 보통 7~10분 걸려 403 이 옵니다. --wait 10m 을 주면 그때까지
+1분 간격으로 재시도합니다(승인 자체는 즉시 끝나므로 다시 신청할 필요 없습니다).
+
 예) gongctl call --pk 15077974 --param numOfRows=10
+    gongctl call --pk 15077974 --wait 15m --param numOfRows=10   # 방금 신청한 API
     gongctl call http://apis.data.go.kr/9760000/.../getX --param numOfRows=10`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -135,14 +141,24 @@ func callCmd() *cobra.Command {
 						strings.Join(missing, ", "), pk)
 				}
 			}
-			res, err := apicall.Call(cmd.Context(), newFetchClient(), endpoint, pm, key)
+			doCall := func(k string) (*apicall.CallResult, error) {
+				if wait <= 0 {
+					return apicall.Call(cmd.Context(), newFetchClient(), endpoint, pm, k)
+				}
+				return apicall.CallWaiting(cmd.Context(), newFetchClient(), endpoint, pm, k, wait,
+					func(elapsed, remaining time.Duration) {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"\r게이트웨이 반영 대기… %s 경과 (최대 %s 더 기다립니다)", elapsed, remaining)
+					})
+			}
+			res, err := doCall(key)
 			// The cached key may be stale (reissued in the portal). Drop it and
 			// retry once with a freshly read key before reporting failure.
 			if errors.Is(err, apicall.ErrKeyRejected) && !cmd.Flags().Changed("key") {
 				portal.InvalidateCachedKey()
 				if fresh, kerr := portal.APIKey(cmd.Context()); kerr == nil && fresh != key {
 					fmt.Fprintln(cmd.ErrOrStderr(), "인증키가 거부됐습니다 — 캐시를 버리고 다시 조회해 재시도합니다.")
-					res, err = apicall.Call(cmd.Context(), newFetchClient(), endpoint, pm, fresh)
+					res, err = doCall(fresh)
 				}
 			}
 			if res != nil {
@@ -158,5 +174,6 @@ func callCmd() *cobra.Command {
 	c.Flags().StringArrayVar(&params, "param", nil, "요청변수 k=v (반복 가능)")
 	c.Flags().StringVar(&pk, "pk", "", "publicDataPk — 엔드포인트를 포털에서 조회 (URL 대신)")
 	c.Flags().StringVar(&op, "op", "", "상세기능 이름 (엔드포인트 마지막 경로 조각). 하나뿐이면 생략 가능")
+	c.Flags().DurationVar(&wait, "wait", 0, "게이트웨이 반영(403)을 이 시간까지 기다리며 재시도 (예: 10m, 최대 1h)")
 	return c
 }

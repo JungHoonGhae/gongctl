@@ -19,6 +19,12 @@ import (
 // and read it again rather than retrying with the same value.
 var ErrKeyRejected = errors.New("data.go.kr 이 인증키를 거부했습니다")
 
+// ErrPropagating reports a 403 from the gateway, which for a just-approved API
+// means the approval has not reached apis.data.go.kr yet. It is a wait, not a
+// failure: retrying the same request with the same key is what fixes it, which is
+// why it is a distinct sentinel from ErrKeyRejected.
+var ErrPropagating = errors.New("게이트웨이에 아직 반영되지 않았습니다 (403)")
+
 // CallResult is a surfaced API response. Body is a map (XML→JSON or JSON),
 // or a string when the content isn't structured.
 type CallResult struct {
@@ -66,12 +72,12 @@ func Call(ctx context.Context, f *fetch.Client, endpoint string, params map[stri
 	// auto-approves the application instantly but takes minutes to propagate it.
 	// Surface that reading so a caller (or agent) doesn't misdiagnose its key.
 	if resp.Status == http.StatusForbidden {
-		return res, fmt.Errorf("data.go.kr 게이트웨이가 403(Forbidden) — 방금 활용신청한 API라면 " +
-			"아직 게이트웨이에 반영되지 않은 것입니다. 관측된 소요 시간은 보통 7~10분이고, " +
-			"포털 안내상 최대 1시간까지 걸릴 수 있습니다. 승인 자체는 즉시 끝나므로 " +
-			"list_applications 에 '승인'으로 보이는 것과 무관합니다. " +
-			"1~2분 간격으로 재시도하세요 — 키를 바꾸거나 다시 신청하지 마세요. " +
-			"인증키가 유효한지는 이미 오래전 승인된 다른 API 를 호출해 확인할 수 있습니다")
+		return res, fmt.Errorf("%w: data.go.kr 게이트웨이가 403(Forbidden) — 방금 활용신청한 API라면 "+
+			"아직 게이트웨이에 반영되지 않은 것입니다. 관측된 소요 시간은 보통 7~10분이고, "+
+			"포털 안내상 최대 1시간까지 걸릴 수 있습니다. 승인 자체는 즉시 끝나므로 "+
+			"list_applications 에 '승인'으로 보이는 것과 무관합니다. "+
+			"1~2분 간격으로 재시도하세요 — 키를 바꾸거나 다시 신청하지 마세요. "+
+			"인증키가 유효한지는 이미 오래전 승인된 다른 API 를 호출해 확인할 수 있습니다", ErrPropagating)
 	}
 
 	// Error surface: never swallow. If the body signals an unregistered key,
