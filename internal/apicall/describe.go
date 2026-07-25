@@ -31,6 +31,14 @@ type APISpec struct {
 	// EndpointOnly marks a spec whose endpoint was recovered from the page but
 	// whose request parameters the portal never documents.
 	EndpointOnly bool `json:"endpointOnly,omitempty"`
+	// LinkURL is the publisher's own page for a LINK dataset, taken from the
+	// portal's URL row. The portal has it on every LINK page sampled, so telling a
+	// caller to "check the publisher's documentation" without handing over the
+	// address it already holds is withholding the one actionable thing on the page.
+	// gongctl does not follow it: the publishers are a long tail (39 distinct hosts
+	// in 70 sampled datasets, the largest 13%), each with its own registration and
+	// spec format, so reading it is the agent's job — surfacing it is ours.
+	LinkURL string `json:"linkUrl,omitempty"`
 	// Approval is the portal's 심의유형 row: whether an application is granted
 	// automatically or waits for a human at the publishing agency.
 	Approval *Approval `json:"approval,omitempty"`
@@ -178,6 +186,20 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 		return true
 	})
 
+	// The URL row appears on LINK pages (where 심의유형 does not).
+	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
+		if cleanText(th.Text()) == "URL" {
+			td := th.NextFiltered("td")
+			if href, ok := td.Find("a[href]").First().Attr("href"); ok {
+				spec.LinkURL = strings.TrimSpace(href)
+			} else {
+				spec.LinkURL = cleanText(td.Text())
+			}
+			return false
+		}
+		return true
+	})
+
 	guideRowFound := false
 	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
 		if strings.Contains(th.Text(), "참고문서") {
@@ -211,8 +233,12 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 			// which would suggest the page layout changed.
 			if strings.Contains(spec.APIType, "LINK") {
 				spec.Note = "이 API 는 유형이 LINK 입니다 — 포털은 명세를 싣지 않고 제공기관 사이트로 " +
-					"연결만 합니다. 엔드포인트·파라미터는 제공기관 문서에서 확인해야 하며, 포털에서는 " +
-					"알 수 없습니다. 추측해서 호출하지 마세요."
+					"연결만 합니다. 엔드포인트·파라미터는 포털에서 알 수 없으니 추측해서 호출하지 마세요."
+				if spec.LinkURL != "" {
+					spec.Note += " linkUrl(" + spec.LinkURL + ") 을 직접 열어 읽으면 명세가 거기 있습니다. " +
+						"단, 대개 제공기관의 별도 회원가입·별도 인증키가 필요하며 gongctl 의 계정 인증키는 " +
+						"그곳에서 쓸 수 없습니다."
+				}
 			} else if guideRowFound {
 				spec.Note = "이 API 는 포털에 명세가 없습니다 — 상세기능·요청변수 표도, 참고문서 파일도 " +
 					"제공되지 않습니다(참고문서 항목이 비어 있음). 엔드포인트와 파라미터를 알 방법이 " +

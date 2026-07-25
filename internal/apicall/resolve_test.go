@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
@@ -143,5 +144,35 @@ func TestApprovalUnparsedKeepsRaw(t *testing.T) {
 	}
 	if spec.Approval.AutoApproved() {
 		t.Error("unrecognised wording must not read as auto-approved")
+	}
+}
+
+// Every LINK dataset sampled (70/70) carries the publisher's address in the URL
+// row, so a note telling the caller to consult the publisher without handing over
+// that address withholds the only actionable thing on the page.
+func TestLinkURLSurfacedAndNamedInNote(t *testing.T) {
+	spec := describeFromHTML(t, `<table>
+		<tr><th>API 유형</th><td>LINK</td></tr>
+		<tr><th>URL</th><td><a href="https://www.safetydata.go.kr/disaster-data/view?dataSn=1326">https://www.safetydata.go.kr/disaster-data/view?dataSn=1326</a></td></tr>
+		<tr><th>참고문서</th><td></td></tr>
+	</table>`)
+	if spec.LinkURL != "https://www.safetydata.go.kr/disaster-data/view?dataSn=1326" {
+		t.Fatalf("linkUrl = %q, want the publisher's href", spec.LinkURL)
+	}
+	if !strings.Contains(spec.Note, spec.LinkURL) {
+		t.Errorf("note should hand over the address, got: %s", spec.Note)
+	}
+	// The publishers are a long tail with their own credentials; promising the
+	// account key works there would send a caller down a dead end.
+	if !strings.Contains(spec.Note, "인증키") {
+		t.Errorf("note should warn the account key does not work there, got: %s", spec.Note)
+	}
+}
+
+// A REST page has no URL row, and must not acquire an empty linkUrl.
+func TestLinkURLAbsentOnRestPage(t *testing.T) {
+	spec := describeFromHTML(t, `<table><tr><th>API 유형</th><td>REST</td></tr></table>`)
+	if spec.LinkURL != "" {
+		t.Errorf("linkUrl = %q, want empty", spec.LinkURL)
 	}
 }
