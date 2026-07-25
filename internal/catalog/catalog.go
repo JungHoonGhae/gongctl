@@ -38,8 +38,18 @@ type Entry struct {
 	ApplyCount int    `json:"applyCount,omitempty"`
 	ViewCount  int    `json:"viewCount,omitempty"`
 	ModifiedAt string `json:"modifiedAt,omitempty"`
+	SvcType    string `json:"svcType,omitempty"` // REST | LINK | "" (portal reports something else)
 	Desc       string `json:"desc,omitempty"`
 }
+
+// Service types worth labelling. REST means the portal publishes a spec, so
+// describe → call can be driven from it; LINK means the portal only points at the
+// publisher, so an agent that applies for one gets a key it cannot use here. Two
+// in five OpenAPI datasets are LINK, which is far too many to leave unmarked.
+const (
+	SvcREST = "REST"
+	SvcLINK = "LINK"
+)
 
 // Catalog is the synced snapshot.
 type Catalog struct {
@@ -55,6 +65,7 @@ type Hit struct {
 	Org        string `json:"org,omitempty"`
 	ApplyCount int    `json:"applyCount,omitempty"`
 	ModifiedAt string `json:"modifiedAt,omitempty"`
+	SvcType    string `json:"svcType,omitempty"` // LINK = no spec on the portal, describe/call will not work
 	Matched    int    `json:"matched,omitempty"` // terms hit — only meaningful when Result.Relaxed
 }
 
@@ -125,38 +136,71 @@ func (c *Catalog) Age() time.Duration { return time.Since(c.SyncedAt) }
 // Sync sweeps the portal's dataset list into a catalogue. perPage is honoured by
 // the portal, so a large page size turns thousands of datasets into tens of
 // requests. progress, when non-nil, is called with the running total.
+//
+// It sweeps three times, and the order matters. The unfiltered sweep comes first
+// and is what defines the catalogue: it cannot miss a dataset even if the portal
+// introduces a service type nobody here has heard of. The two filtered sweeps only
+// *label* what the first one already found. A dataset the portal reports as
+// neither REST nor LINK therefore ends up unlabelled rather than mislabelled —
+// unknown is a fact worth keeping, and guessing here would send an agent to apply
+// for something it cannot call.
 func Sync(ctx context.Context, pc *portal.Client, dType string, perPage int, progress func(int)) (*Catalog, error) {
 	if perPage <= 0 {
 		perPage = 200
 	}
 	seen := map[string]Entry{}
-	for page := 1; ; page++ {
-		batch, err := pc.SearchDatasets(ctx, portal.SearchOptions{
-			Type: dType, Page: page, PerPage: perPage,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("%d페이지 수집 실패: %w", page, err)
-		}
-		added := 0
-		for _, d := range batch {
-			if _, ok := seen[d.PublicDataPk]; ok {
-				continue
+	// sweep pages until the portal stops producing datasets it has not already
+	// returned in this sweep. Termination is decided by pagination progress alone —
+	// never by whether visit did anything with a row — so a labelling pass cannot
+	// cut itself short on a page whose rows were all handled already.
+	sweep := func(svcType string, visit func(portal.Dataset)) error {
+		inSweep := map[string]bool{}
+		for page := 1; ; page++ {
+			batch, err := pc.SearchDatasets(ctx, portal.SearchOptions{
+				Type: dType, SvcType: svcType, Page: page, PerPage: perPage,
+			})
+			if err != nil {
+				return fmt.Errorf("%d페이지 수집 실패 (svcType=%q): %w", page, svcType, err)
 			}
-			seen[d.PublicDataPk] = Entry{
-				PK: d.PublicDataPk, Title: d.Title, Org: d.Org, OrgType: d.OrgType,
-				Category: d.Category, ApplyCount: d.ApplyCount, ViewCount: d.ViewCount,
-				ModifiedAt: d.ModifiedAt, Desc: d.Description,
+			fresh := 0
+			for _, d := range batch {
+				if inSweep[d.PublicDataPk] {
+					continue
+				}
+				inSweep[d.PublicDataPk] = true
+				fresh++
+				visit(d)
 			}
-			added++
-		}
-		if progress != nil {
-			progress(len(seen))
-		}
-		// A page that adds nothing new means the portal has stopped advancing.
-		if added == 0 {
-			break
+			if progress != nil {
+				progress(len(seen))
+			}
+			if fresh == 0 {
+				return nil
+			}
 		}
 	}
+
+	if err := sweep("", func(d portal.Dataset) {
+		seen[d.PublicDataPk] = Entry{
+			PK: d.PublicDataPk, Title: d.Title, Org: d.Org, OrgType: d.OrgType,
+			Category: d.Category, ApplyCount: d.ApplyCount, ViewCount: d.ViewCount,
+			ModifiedAt: d.ModifiedAt, Desc: d.Description,
+		}
+	}); err != nil {
+		return nil, err
+	}
+
+	for _, svc := range []string{SvcREST, SvcLINK} {
+		if err := sweep(svc, func(d portal.Dataset) {
+			if e, ok := seen[d.PublicDataPk]; ok && e.SvcType == "" {
+				e.SvcType = svc
+				seen[d.PublicDataPk] = e
+			}
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	c := &Catalog{SyncedAt: time.Now().UTC(), Type: dType}
 	for _, e := range seen {
 		c.Entries = append(c.Entries, e)
@@ -217,7 +261,11 @@ func queryTerms(query string) []string {
 // different question from the one asked, and the caller has to know that.
 // Within a tier, ranking is by application count: demand is the best available
 // proxy for "this one is actually usable".
-func (c *Catalog) Search(query string, limit int) Result {
+//
+// restOnly drops everything the portal does not report as REST. For an agent that
+// intends to describe and call, that is the honest default: a LINK dataset has no
+// spec here, so applying for one spends a real application on a dead end.
+func (c *Catalog) Search(query string, limit int, restOnly bool) Result {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -232,6 +280,9 @@ func (c *Catalog) Search(query string, limit int) Result {
 	var all []scored
 	for i := range c.Entries {
 		e := &c.Entries[i]
+		if restOnly && e.SvcType != SvcREST {
+			continue
+		}
 		name := strings.ToLower(e.Title + " " + e.Org + " " + e.Category)
 		desc := strings.ToLower(e.Desc)
 		s := scored{e: e}
@@ -286,13 +337,27 @@ func (c *Catalog) Search(query string, limit int) Result {
 	}
 	for _, s := range kept {
 		h := Hit{PK: s.e.PK, Title: s.e.Title, Org: s.e.Org,
-			ApplyCount: s.e.ApplyCount, ModifiedAt: s.e.ModifiedAt}
+			ApplyCount: s.e.ApplyCount, ModifiedAt: s.e.ModifiedAt, SvcType: s.e.SvcType}
 		if res.Relaxed {
 			h.Matched = s.matched
 		}
 		res.Hits = append(res.Hits, h)
 	}
 	return res
+}
+
+// SvcTypes counts datasets per service type, so `info` can say how much of the
+// catalogue is callable from the portal at all.
+func (c *Catalog) SvcTypes() map[string]int {
+	out := map[string]int{}
+	for _, e := range c.Entries {
+		k := e.SvcType
+		if k == "" {
+			k = "미확인"
+		}
+		out[k]++
+	}
+	return out
 }
 
 // Orgs counts datasets per publisher, most first — the fastest way to see who

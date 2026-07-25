@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ func catalogCmd() *cobra.Command {
   gongctl catalog sync            전체 목록 수집 (수십 초)
   gongctl catalog sync --if-stale 오래됐을 때만 수집 — cron/CI 로 주기 갱신할 때
   gongctl catalog search 폭염     로컬 검색 — 활용신청 많은 순
+  gongctl catalog search 폭염 --rest-only   호출 가능한(REST) 것만
   gongctl catalog orgs 폭염       그 주제를 개방한 기관 순위
   gongctl catalog info            언제 수집했는지 / 몇 건인지`,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
@@ -78,6 +80,7 @@ func catalogSyncCmd() *cobra.Command {
 
 func catalogSearchCmd() *cobra.Command {
 	var limit int
+	var restOnly bool
 	c := &cobra.Command{
 		Use:   "search <검색어…>",
 		Short: "로컬 카탈로그 검색 (모든 단어가 포함된 것, 활용신청 많은 순)",
@@ -98,7 +101,7 @@ func catalogSearchCmd() *cobra.Command {
 				}
 				q += a
 			}
-			res := cat.Search(q, limit)
+			res := cat.Search(q, limit, restOnly)
 			hits, total := res.Hits, res.Total
 			if format != output.Table {
 				return output.WriteJSON(cmd.OutOrStdout(), map[string]any{
@@ -115,10 +118,14 @@ func catalogSearchCmd() *cobra.Command {
 					"모든 단어를 포함하는 결과가 없어 일부만 일치하는 것까지 보여줍니다 (검색어: %s)\n\n",
 					strings.Join(res.Terms, " "))
 			}
-			headers := []string{"pk", "활용신청", "수정일", "제공기관", "데이터명"}
+			headers := []string{"pk", "유형", "활용신청", "수정일", "제공기관", "데이터명"}
 			rows := make([][]string, 0, len(hits))
 			for _, h := range hits {
-				rows = append(rows, []string{h.PK, fmt.Sprintf("%d", h.ApplyCount), h.ModifiedAt, h.Org, h.Title})
+				svc := h.SvcType
+				if svc == "" {
+					svc = "?"
+				}
+				rows = append(rows, []string{h.PK, svc, fmt.Sprintf("%d", h.ApplyCount), h.ModifiedAt, h.Org, h.Title})
 			}
 			if err := output.WriteTable(cmd.OutOrStdout(), headers, rows); err != nil {
 				return err
@@ -130,6 +137,7 @@ func catalogSearchCmd() *cobra.Command {
 		},
 	}
 	c.Flags().IntVar(&limit, "limit", 20, "표시할 최대 건수")
+	c.Flags().BoolVar(&restOnly, "rest-only", false, "포털에 명세가 있는 REST 만 (LINK 는 describe/call 불가)")
 	return c
 }
 
@@ -187,12 +195,31 @@ func catalogInfoCmd() *cobra.Command {
 				return output.WriteJSON(cmd.OutOrStdout(), map[string]any{
 					"syncedAt": cat.SyncedAt, "type": cat.Type,
 					"entries": len(cat.Entries), "stale": cat.Stale(),
+					"svcTypes": cat.SvcTypes(),
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "수집 %s (%.0f시간 전) · %s 유형 · %d건%s\n",
 				cat.SyncedAt.Local().Format("2006-01-02 15:04"), cat.Age().Hours(),
 				cat.Type, len(cat.Entries),
 				map[bool]string{true: " · ⚠ 오래됨, sync 권장", false: ""}[cat.Stale()])
+			// Which share is callable from the portal at all is the number that
+			// decides whether a search result is worth applying for.
+			byType := cat.SvcTypes()
+			kinds := make([]string, 0, len(byType))
+			for k := range byType {
+				kinds = append(kinds, k)
+			}
+			sort.Slice(kinds, func(i, j int) bool { return byType[kinds[i]] > byType[kinds[j]] })
+			for _, k := range kinds {
+				note := ""
+				switch k {
+				case catalog.SvcREST:
+					note = " — 포털에 명세 있음, describe/call 가능"
+				case catalog.SvcLINK:
+					note = " — 포털에 명세 없음(제공기관 사이트로 연결)"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "  %-6s %6d건%s\n", k, byType[k], note)
+			}
 			return nil
 		},
 	}

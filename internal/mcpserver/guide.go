@@ -6,9 +6,13 @@ const GuideDoc = `# gongctl — data.go.kr 사용 가이드
 
 ## 도구 사용 순서
 0. **catalog_search(query)** — **탐색은 여기서 시작하라.** 로컬 카탈로그(전체 목록)를 한 번에
-   훑으므로, 키워드를 하나씩 추측하며 포털에 반복 질의할 필요가 없다. 활용신청 많은 순으로
-   오고 설명문은 오지 않는다(컨텍스트 절약). total 이 크면 검색어를 좁혀라.
-   stale=true 면 최근 신설 API 가 누락될 수 있으니 사람에게 gongctl catalog sync 를 권하라.
+   훑으므로, 키워드를 하나씩 추측하며 포털에 반복 질의할 필요가 없다. 질의는 자연어로 써도 된다.
+   활용신청 많은 순으로 오고 설명문은 오지 않는다(컨텍스트 절약). total 이 크면 검색어를 좁혀라.
+   - **호출까지 갈 생각이면 restOnly=true 를 줘라.** 전체의 약 40%(11,932개 중 4,770개)가
+     svcType=LINK 이고, LINK 는 포털에 명세가 없어 describe_api 가 엔드포인트를 줄 수 없다.
+     LINK 를 신청하면 실제 활용신청 1건을 쓰고도 호출하지 못한다.
+   - svcType 이 비어 있으면 유형이 확인되지 않은 것이다(추측하지 말고 describe_api 로 확인).
+   - stale=true 면 최근 신설 API 가 누락될 수 있으니 사람에게 gongctl catalog sync 를 권하라.
 1. **search_datasets(keyword)** — 포털 라이브 검색. 카탈로그에 없는 최신 항목을 확인할 때 쓴다.
    hasOpenApi=true 인 것이 API 호출 대상.
 2. **list_applications()** — 이미 활용신청한 API와 그 상태·인증키 만료일을 확인.

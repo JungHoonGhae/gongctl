@@ -5,6 +5,30 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.3.0]
+
+### Added
+
+- **The catalogue now records each dataset's service type, and two in five are a
+  dead end.** 4,770 of 11,932 OpenAPI datasets are `LINK`: the portal publishes no
+  spec for them and only links to the publisher's site, so `describe` cannot
+  produce an endpoint and an application spent on one buys a key that cannot be
+  used here. Nothing surfaced that before — searching 폭염 returned a LINK dataset
+  second, ahead of three callable ones, purely on application count.
+
+  `catalog search --rest-only` (MCP `restOnly: true`) keeps only what the portal
+  reports as REST; every result carries its `svcType` either way, and `catalog
+  info` reports the breakdown. Verified against `describe` from the opposite
+  direction: the LINK-labelled dataset reports `apiType: LINK` with zero
+  operations, the REST-labelled one reports two operations with a live endpoint.
+
+  Labels come from the portal's own `svcType` filter, and the counts it returns
+  (REST 7,156 / LINK 4,770) account for the catalogue exactly. `sync` still starts
+  with an unfiltered sweep that defines the catalogue, then labels what it found,
+  so a service type nobody here has heard of yet leaves an entry **unlabelled
+  rather than missing or mislabelled** — the 6 datasets the portal reports as
+  neither show up as 미확인. Sync now takes ~235s instead of ~160s.
+
 ## [0.2.0]
 
 ### Added

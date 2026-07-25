@@ -41,6 +41,9 @@ type callIn struct {
 type catalogIn struct {
 	Query string `json:"query" jsonschema:"space-separated terms; every term must appear in the title, publisher or description"`
 	Limit int    `json:"limit,omitempty" jsonschema:"max rows to return (default 20) — keep it small, the total match count comes back separately"`
+	// Default false so a caller sees the whole catalogue unless it says otherwise;
+	// the tool description tells an agent that intends to call to set it.
+	RESTOnly bool `json:"restOnly,omitempty" jsonschema:"true = only datasets whose spec is published on the portal (REST). Set this when you intend to describe and call, since a LINK dataset cannot be called from here"`
 }
 type catalogOut struct {
 	Terms    []string      `json:"terms"`             // what the query was reduced to
@@ -95,6 +98,8 @@ func New(deps Deps) *mcp.Server {
 			"query 는 자연어로 그대로 써도 된다('폭염에 취약한 고령자'처럼) — 조사와 불필요한 말은 " +
 			"알아서 걸러진다. 결과는 활용신청 많은 순(=실제로 쓰이는 순)이고, 설명문은 반환하지 않는다" +
 			"(컨텍스트 절약). 데이터 탐색은 이 도구로 시작하라. " +
+			"svcType 이 LINK 면 포털에 명세가 없어 describe_api/call_api 로 갈 수 없다(전체의 약 40%%가 LINK다) — " +
+			"호출까지 갈 생각이면 restOnly=true 를 주고 검색하라. svcType 이 비어 있으면 유형이 확인되지 않은 것이다. " +
 			"relaxed=true 면 모든 단어를 포함하는 데이터가 없어 일부만 일치하는 것까지 보여준 것이므로 " +
 			"matched 가 낮은 결과는 무관할 수 있다. terms 로 실제 검색된 단어를 확인하라. " +
 			"stale=true 면 스냅샷이 오래되어 최근 신설 API 가 누락될 수 있다. " +
@@ -104,7 +109,7 @@ func New(deps Deps) *mcp.Server {
 		if err != nil {
 			return errResult(err.Error()), nil, nil
 		}
-		res := cat.Search(in.Query, in.Limit)
+		res := cat.Search(in.Query, in.Limit, in.RESTOnly)
 		hits := res.Hits
 		return nil, &catalogOut{
 			Terms: res.Terms, Relaxed: res.Relaxed,

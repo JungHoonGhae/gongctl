@@ -34,6 +34,10 @@ type SearchOptions struct {
 	Keyword string
 	Org     string
 	Type    string // "FILE" | "API" | "" (all)
+	// SvcType narrows OpenAPI datasets by service type as the portal's own filter
+	// does: "REST" (spec published on the portal) or "LINK" (only a pointer to the
+	// publisher's site). Empty means every type.
+	SvcType string
 	Page    int
 	// PerPage is how many results one page returns (default 10, the portal's own
 	// default). Raise it to sweep a large result set in fewer requests.
@@ -56,6 +60,9 @@ func (c *Client) SearchDatasets(ctx context.Context, opts SearchOptions) ([]Data
 	q := url.Values{}
 	if opts.Type != "" {
 		q.Set("dType", opts.Type)
+	}
+	if opts.SvcType != "" {
+		q.Set("svcType", opts.SvcType)
 	}
 	if opts.Org != "" {
 		q.Set("org", opts.Org)

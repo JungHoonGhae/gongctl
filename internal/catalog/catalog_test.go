@@ -25,13 +25,13 @@ func sample() *Catalog {
 // heavily used dataset first rather than whatever happened to be stored first.
 func TestSearchRanksByDemand(t *testing.T) {
 	c := sample()
-	r := c.Search("기온", 10)
+	r := c.Search("기온", 10, false)
 	hits, total := r.Hits, r.Total
 	if total != 1 || len(hits) != 1 || hits[0].PK != "2" {
 		t.Fatalf("기온 → %d hits (total %d), first %+v", len(hits), total, hits)
 	}
 
-	r = c.Search("행정안전부", 10)
+	r = c.Search("행정안전부", 10, false)
 	hits, total = r.Hits, r.Total
 	if total != 2 {
 		t.Fatalf("행정안전부 → total %d, want 2", total)
@@ -44,7 +44,7 @@ func TestSearchRanksByDemand(t *testing.T) {
 // Precision first: when entries match every term, only those are returned and
 // the result is not marked relaxed.
 func TestSearchPrefersEveryTermMatching(t *testing.T) {
-	r := sample().Search("행정안전부 온열질환자", 10)
+	r := sample().Search("행정안전부 온열질환자", 10, false)
 	if r.Relaxed {
 		t.Error("both terms matched, should not relax")
 	}
@@ -56,7 +56,7 @@ func TestSearchPrefersEveryTermMatching(t *testing.T) {
 // Recall as a fallback: a query no entry fully satisfies must still answer, and
 // must say it loosened the query rather than pretending the result is exact.
 func TestSearchRelaxesWhenNothingMatchesEveryTerm(t *testing.T) {
-	r := sample().Search("행정안전부 존재하지않는말", 10)
+	r := sample().Search("행정안전부 존재하지않는말", 10, false)
 	if !r.Relaxed {
 		t.Fatal("no entry has both terms — expected a relaxed result, not silence")
 	}
@@ -70,7 +70,7 @@ func TestSearchRelaxesWhenNothingMatchesEveryTerm(t *testing.T) {
 
 // A single unmatchable word is a genuine miss, not something to widen.
 func TestSearchSingleTermMissStaysEmpty(t *testing.T) {
-	if r := sample().Search("존재하지않는말", 10); r.Total != 0 || r.Relaxed {
+	if r := sample().Search("존재하지않는말", 10, false); r.Total != 0 || r.Relaxed {
 		t.Errorf("single unmatchable term → total %d relaxed %v, want 0/false", r.Total, r.Relaxed)
 	}
 }
@@ -78,8 +78,8 @@ func TestSearchSingleTermMissStaysEmpty(t *testing.T) {
 // The query is written by a person or an agent, not filled into a search form:
 // particles and filler words must not decide whether it finds anything.
 func TestSearchHandlesNaturalLanguage(t *testing.T) {
-	plain := sample().Search("폭염 인명피해", 10)
-	natural := sample().Search("폭염으로 인한 인명피해 데이터 알려줘", 10)
+	plain := sample().Search("폭염 인명피해", 10, false)
+	natural := sample().Search("폭염으로 인한 인명피해 데이터 알려줘", 10, false)
 	if natural.Total != plain.Total {
 		t.Errorf("natural phrasing → %d hits, keyword phrasing → %d; should agree", natural.Total, plain.Total)
 	}
@@ -105,7 +105,7 @@ func TestQueryTermsKeepsShortWordsIntact(t *testing.T) {
 // The description is what makes matching work, and is exactly what must not be
 // handed back — ten descriptions is thousands of characters of an agent's context.
 func TestSearchDoesNotReturnDescriptions(t *testing.T) {
-	hits := sample().Search("폭염", 10).Hits
+	hits := sample().Search("폭염", 10, false).Hits
 	if len(hits) == 0 {
 		t.Fatal("expected description-matched hits")
 	}
@@ -123,7 +123,7 @@ func TestSearchDoesNotReturnDescriptions(t *testing.T) {
 
 // A capped result set still reports how many matched, so a caller knows to narrow.
 func TestSearchCapsButReportsTotal(t *testing.T) {
-	r := sample().Search("", 2)
+	r := sample().Search("", 2, false)
 	hits, total := r.Hits, r.Total
 	if len(hits) != 2 || total != 3 {
 		t.Errorf("limit 2 over 3 entries → %d hits, total %d", len(hits), total)
@@ -149,8 +149,30 @@ func TestSearchPrefersNameMatchesOverDescriptionMatches(t *testing.T) {
 		{PK: "1", Title: "인기 있는 교통 통계", ApplyCount: 9000, Desc: "지역 상권 변화도 참고할 수 있습니다"},
 		{PK: "2", Title: "소상공인시장진흥공단_상권정보", ApplyCount: 10},
 	}}
-	r := c.Search("상권", 10)
+	r := c.Search("상권", 10, false)
 	if r.Hits[0].PK != "2" {
 		t.Errorf("name match should outrank a description mention; got pk=%s first", r.Hits[0].PK)
+	}
+}
+
+// A LINK dataset has no spec on the portal, so an agent heading for describe →
+// call must be able to exclude them: applying for one spends a real application
+// on something it cannot call. Unlabelled entries are excluded too — restOnly
+// promises "the portal says REST", and an unverified guess is not that.
+func TestSearchRESTOnlyExcludesLinkAndUnknown(t *testing.T) {
+	c := &Catalog{SyncedAt: time.Now(), Entries: []Entry{
+		{PK: "rest", Title: "폭염 정보", SvcType: SvcREST, ApplyCount: 1},
+		{PK: "link", Title: "폭염 연계", SvcType: SvcLINK, ApplyCount: 900},
+		{PK: "unknown", Title: "폭염 기타", ApplyCount: 500},
+	}}
+	if all := c.Search("폭염", 10, false); all.Total != 3 {
+		t.Errorf("unfiltered search → %d, want 3", all.Total)
+	}
+	r := c.Search("폭염", 10, true)
+	if r.Total != 1 || r.Hits[0].PK != "rest" {
+		t.Fatalf("restOnly → total %d first %v, want 1 rest", r.Total, r.Hits)
+	}
+	if r.Hits[0].SvcType != SvcREST {
+		t.Errorf("hit should carry its service type, got %q", r.Hits[0].SvcType)
 	}
 }
