@@ -5,6 +5,66 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.2.0]
+
+### Added
+
+- **API catalogue** (`catalog sync|search|orgs|info`, MCP `catalog_search`) — the
+  portal only answers keyword queries, so finding out whether a dataset exists
+  meant inventing search terms one at a time and never knowing whether a miss
+  meant "doesn't exist" or "wrong word". `sync` sweeps the whole OpenAPI list
+  (11,932 datasets in ~160s, 60 requests) into a local snapshot; `search` answers
+  from disk instantly, ranked by application count, because demand is the best
+  available proxy for "this one is actually usable".
+
+  The gap this closes is real and was measured, not assumed: while researching
+  heatwave data, four separate keyword searches missed
+  기상청_생활기상지수 (5,045 applications, carries the heat-index figures) because
+  none of the guessed words matched its wording. One catalogue search finds it.
+
+  Descriptions are stored but never returned — they are what makes matching work
+  and also what wrecks an agent's context (ten of them is ~3,000 characters of
+  prose nobody asked for). Results are compact rows plus the total match count, so
+  a caller can tell it should narrow the query rather than page blindly.
+- **Queries can be written as sentences.** `"폭염에 취약한 고령자 데이터"` used to
+  return nothing, because every term had to appear and particles and the word
+  데이터 never do. Terms are now reduced (trailing particles trimmed, fillers
+  dropped) before matching. Entries matching *every* term still win; only when
+  there are none are the terms ORed — and that widening is reported as
+  `relaxed`/`matched` rather than hidden, because a widened search answers a
+  different question than the one asked. A term in the dataset's name outranks the
+  same term buried in its blurb.
+- **`catalog sync --if-stale`** — syncs only when the snapshot is old, so a cron
+  entry or CI step can refresh unconditionally without anyone having to remember
+  the cadence.
+- **`doctor` now checks catalogue freshness**, reporting a stale snapshot as
+  drift. A stale catalogue keeps answering while silently omitting everything
+  published since the sync, which is exactly the kind of quiet wrongness `doctor`
+  exists to make loud.
+
+### Fixed
+
+- **`apply` no longer burns the login session.** The portal rotates its session
+  cookie during the application flow, and the rotated cookie lived only inside the
+  headless browser — so every `apply` left the saved session dead and the next
+  command demanded a fresh login. The rotated session is now captured before the
+  browser closes (and only if it actually works, so a failed apply cannot
+  overwrite a good session with a broken one).
+- **`login` no longer opens a second login screen.** Polling for completion
+  navigated a fresh tab to an authenticated page each time, which the portal
+  bounced back to its login wall — so the user watched a second login appear on
+  top of the one they were using. Login is now detected by reading cookies without
+  navigating at all.
+- **A rejected serviceKey is retried once with a freshly read key.** The cached
+  key is normally right, but goes stale when the key is reissued on the portal;
+  previously that surfaced as an authentication failure the user had to diagnose.
+- Gateway propagation guidance now states the measured wait (7~10 minutes; the
+  portal's own ceiling is an hour) and says explicitly that `list_applications`
+  showing 승인 does not yet mean callable.
+- `catalog sync` progress reported every 1,000 datasets, which left the first
+  stretch of a multi-minute command silent and indistinguishable from a hang; it
+  now reports every page.
+
 ## [0.1.1]
 
 ### Fixed

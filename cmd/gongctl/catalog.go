@@ -20,6 +20,7 @@ func catalogCmd() *cobra.Command {
 있나?"를 확인하려면 검색어를 하나씩 추측해 볼 수밖에 없습니다.
 
   gongctl catalog sync            전체 목록 수집 (수십 초)
+  gongctl catalog sync --if-stale 오래됐을 때만 수집 — cron/CI 로 주기 갱신할 때
   gongctl catalog search 폭염     로컬 검색 — 활용신청 많은 순
   gongctl catalog orgs 폭염       그 주제를 개방한 기관 순위
   gongctl catalog info            언제 수집했는지 / 몇 건인지`,
@@ -32,17 +33,31 @@ func catalogCmd() *cobra.Command {
 func catalogSyncCmd() *cobra.Command {
 	var dtype string
 	var perPage int
+	var ifStale bool
 	c := &cobra.Command{
 		Use:   "sync",
 		Short: "포털에서 전체 목록을 받아 로컬 카탈로그 갱신",
+		Long: `포털의 전체 오픈API 목록을 수집해 로컬 카탈로그를 갱신합니다.
+
+--if-stale 은 카탈로그가 아직 신선하면 아무것도 하지 않고 성공합니다. 갱신 주기를
+판단하는 일을 사람이 기억하지 않아도 되도록, cron 이나 CI 가 조건 없이 걸어두는 용도입니다:
+
+  0 4 * * *  gongctl catalog sync --if-stale`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			start := time.Now()
-			last := 0
-			cat, err := catalog.Sync(cmd.Context(), newPortalClient(), dtype, perPage, func(n int) {
-				if n-last >= 1000 {
-					last = n
-					fmt.Fprintf(cmd.ErrOrStderr(), "\r  수집 중… %d건", n)
+			if ifStale {
+				// Only an existing, still-fresh catalogue is a reason to skip. A
+				// missing or unreadable one means sync is exactly what's needed.
+				if cur, err := catalog.Load(); err == nil && !cur.Stale() {
+					fmt.Fprintf(cmd.ErrOrStderr(), "카탈로그가 아직 신선합니다 (%.0f일 전, %d건) — 건너뜁니다\n",
+						cur.Age().Hours()/24, len(cur.Entries))
+					return nil
 				}
+			}
+			start := time.Now()
+			// Report every page, not every thousand: this runs for minutes, and
+			// silence for the first stretch is indistinguishable from a hang.
+			cat, err := catalog.Sync(cmd.Context(), newPortalClient(), dtype, perPage, func(n int) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "\r  수집 중… %d건", n)
 			})
 			if err != nil {
 				return err
@@ -57,6 +72,7 @@ func catalogSyncCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&dtype, "type", "API", "데이터 유형: API | FILE")
 	c.Flags().IntVar(&perPage, "per-page", 200, "페이지당 요청 건수")
+	c.Flags().BoolVar(&ifStale, "if-stale", false, "카탈로그가 오래됐을 때만 수집 (cron/CI 용)")
 	return c
 }
 
