@@ -12,6 +12,7 @@ import (
 
 func searchCmd() *cobra.Command {
 	var dtype, org string
+	var perPage, page int
 	c := &cobra.Command{
 		Use:   "search <keyword>",
 		Short: "data.go.kr 데이터셋 검색 (파일 + OpenAPI)",
@@ -25,6 +26,8 @@ func searchCmd() *cobra.Command {
 				Keyword: strings.Join(args, " "),
 				Type:    strings.ToUpper(dtype),
 				Org:     org,
+				PerPage: perPage,
+				Page:    page,
 			})
 			if err != nil {
 				return err
@@ -46,6 +49,8 @@ func searchCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&dtype, "type", "", "데이터 유형: file | api (기본: 전체)")
 	c.Flags().StringVar(&org, "org", "", "제공기관 필터")
+	c.Flags().IntVar(&perPage, "per-page", 0, "페이지당 결과 수 (기본 10)")
+	c.Flags().IntVar(&page, "page", 0, "페이지 번호 (1부터)")
 	return c
 }
 

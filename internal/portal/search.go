@@ -10,13 +10,22 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-// Dataset is one data.go.kr dataset from a search result.
+// Dataset is one data.go.kr dataset from a search result. Beyond the identity
+// fields, the list carries per-dataset metadata (publisher, last update, and how
+// much the dataset is actually looked at and applied for) which is what makes it
+// possible to judge a dataset without opening its page.
 type Dataset struct {
 	PublicDataPk string   `json:"publicDataPk"`
 	Title        string   `json:"title"`
 	Description  string   `json:"description,omitempty"`
 	Formats      []string `json:"formats,omitempty"`
-	HasOpenAPI   bool     `json:"hasOpenApi"` // true when the result links to /data/{pk}/openapi.do
+	HasOpenAPI   bool     `json:"hasOpenApi"`           // true when the result links to /data/{pk}/openapi.do
+	Org          string   `json:"org,omitempty"`        // 제공기관
+	ModifiedAt   string   `json:"modifiedAt,omitempty"` // 수정일
+	ViewCount    int      `json:"viewCount,omitempty"`  // 조회수
+	ApplyCount   int      `json:"applyCount,omitempty"` // 활용신청 건수
+	Category     string   `json:"category,omitempty"`   // 분류체계
+	OrgType      string   `json:"orgType,omitempty"`    // 기관유형 (공공기관/지자체 등)
 }
 
 // SearchOptions filters a dataset search. Blank Org = all publishers; blank
@@ -26,6 +35,9 @@ type SearchOptions struct {
 	Org     string
 	Type    string // "FILE" | "API" | "" (all)
 	Page    int
+	// PerPage is how many results one page returns (default 10, the portal's own
+	// default). Raise it to sweep a large result set in fewer requests.
+	PerPage int
 }
 
 var (
@@ -50,7 +62,11 @@ func (c *Client) SearchDatasets(ctx context.Context, opts SearchOptions) ([]Data
 	}
 	q.Set("keyword", opts.Keyword)
 	q.Set("currentPage", strconv.Itoa(page))
-	q.Set("perPage", "10")
+	perPage := opts.PerPage
+	if perPage <= 0 {
+		perPage = 10
+	}
+	q.Set("perPage", strconv.Itoa(perPage))
 
 	doc, err := c.getDoc(ctx, "/tcs/dss/selectDataSetList.do", q)
 	if err != nil {
@@ -59,7 +75,15 @@ func (c *Client) SearchDatasets(ctx context.Context, opts SearchOptions) ([]Data
 
 	var out []Dataset
 	seen := map[string]bool{}
-	doc.Find("dl").Each(func(_ int, dl *goquery.Selection) {
+	// Each result is one <li> holding the <dl> (title/description) plus sibling
+	// .tag-area and .info-data blocks; iterating the <li> keeps a dataset's
+	// metadata attached to it instead of only reading the <dl>.
+	items := doc.Find(".result-list > ul > li")
+	if items.Length() == 0 {
+		items = doc.Find("dl").Parent() // older/simpler markup
+	}
+	items.Each(func(_ int, li *goquery.Selection) {
+		dl := li.Find("dl").First()
 		href, _ := dl.Find(`a[href*="/data/"]`).First().Attr("href")
 		var pk string
 		hasAPI := false
@@ -73,13 +97,30 @@ func (c *Client) SearchDatasets(ctx context.Context, opts SearchOptions) ([]Data
 		}
 		seen[pk] = true
 		title, formats := parseDt(dl)
-		out = append(out, Dataset{
+		d := Dataset{
 			PublicDataPk: pk,
 			Title:        title,
 			Description:  cleanText(dl.Find("dd").First().Text()),
 			Formats:      formats,
 			HasOpenAPI:   hasAPI,
+			Category:     cleanText(li.Find(".tag-area .labelset.brown").First().Text()),
+			OrgType:      cleanText(li.Find(".tag-area .labelset.red").First().Text()),
+		}
+		// .info-data is a list of label/value pairs (same shape as the 활용신청
+		// 현황 list): <p><span class="tit">제공기관</span><span class="data">…</span></p>
+		li.Find(".info-data p").Each(func(_ int, p *goquery.Selection) {
+			switch cleanText(p.Find(".tit").Text()) {
+			case "제공기관":
+				d.Org = cleanText(p.Find(".data").Text())
+			case "수정일":
+				d.ModifiedAt = cleanText(p.Find(".data").Text())
+			case "조회수":
+				d.ViewCount = atoiLoose(cleanText(p.Find(".data").Text()))
+			case "활용신청":
+				d.ApplyCount = atoiLoose(cleanText(p.Find(".data").Text()))
+			}
 		})
+		out = append(out, d)
 	})
 	return out, nil
 }
@@ -107,6 +148,16 @@ func parseDt(dl *goquery.Selection) (title string, formats []string) {
 	}
 	title = strings.TrimSpace(strings.TrimSuffix(strings.Join(toks[i:], " "), "미리보기"))
 	return title, formats
+}
+
+// atoiLoose parses a count that may carry thousands separators, returning 0 when
+// the portal renders something unexpected (never a fabricated number).
+func atoiLoose(s string) int {
+	n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(s), ",", ""))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // cleanText collapses runs of whitespace to single spaces.
