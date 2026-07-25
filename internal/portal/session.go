@@ -72,7 +72,8 @@ func loadSession() (*Session, error) {
 	return &s, nil
 }
 
-// clearSession removes the stored cookies (logout).
+// clearSession removes the stored cookies and the cached serviceKey (logout).
+// Both are credentials, so logout must take both.
 func clearSession() error {
 	path, err := sessionPath()
 	if err != nil {
@@ -80,6 +81,11 @@ func clearSession() error {
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	if dir, derr := configDir(); derr == nil {
+		if err := os.Remove(filepath.Join(dir, keyCacheFile)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -137,6 +143,29 @@ func getWithSession(ctx context.Context, s *Session, path string) (html string, 
 		return "", fmt.Errorf("GET %s: status %d", path, resp.StatusCode)
 	}
 	return string(body), nil
+}
+
+// getAuthed fetches a path with the session and retries once if the portal serves
+// the login wall. Observed on a live, valid session: data.go.kr intermittently
+// answers an authenticated request with the login page (HTTP 200), and treating
+// that as "logged out" makes callers demand a needless re-login.
+func getAuthed(ctx context.Context, s *Session, path string) (string, error) {
+	html, err := getWithSession(ctx, s, path)
+	if err != nil {
+		return "", err
+	}
+	if !isLoginWall(html, "") {
+		return html, nil
+	}
+	time.Sleep(800 * time.Millisecond)
+	html, err = getWithSession(ctx, s, path)
+	if err != nil {
+		return "", err
+	}
+	if isLoginWall(html, "") {
+		return "", ErrNotLoggedIn
+	}
+	return html, nil
 }
 
 // sessionWorks reports whether the extracted cookies actually authenticate over

@@ -143,7 +143,7 @@ func closeBrowser(ctx context.Context, st *daemonState) {
 // CDP when only that is available.
 func Applications(ctx context.Context) ([]Application, error) {
 	if sess, serr := loadSession(); serr == nil {
-		if html, herr := getWithSession(ctx, sess, AccountListPath); herr == nil && isAuthed(html, "") {
+		if html, herr := getAuthed(ctx, sess, AccountListPath); herr == nil && isAuthed(html, "") {
 			apps, perr := parseApplications(html)
 			if perr != nil {
 				return nil, perr
@@ -153,7 +153,7 @@ func Applications(ctx context.Context) ([]Application, error) {
 			// for this?" gets a wrong answer.
 			total := parseTotalCount(html)
 			for page := 2; len(apps) < total; page++ {
-				more, merr := getWithSession(ctx, sess, fmt.Sprintf("%s?pageIndex=%d", AccountListPath, page))
+				more, merr := getAuthed(ctx, sess, fmt.Sprintf("%s?pageIndex=%d", AccountListPath, page))
 				if merr != nil {
 					return nil, merr
 				}
@@ -246,13 +246,21 @@ func probeIn(tctx context.Context, path string) (html, loc string, err error) {
 // isAuthed reports whether a probed page is the authenticated 활용신청 현황 list
 // rather than the login wall.
 func isAuthed(html, loc string) bool {
-	if strings.Contains(loc, "common-login") || strings.Contains(loc, "auth.data.go.kr") {
-		return false
-	}
-	if strings.Contains(html, "통합 로그인") || strings.Contains(html, "로그인 중 입니다") {
+	if isLoginWall(html, loc) {
 		return false
 	}
 	return strings.Contains(html, "mypage-dataset-list") || strings.Contains(html, "활용신청 현황")
+}
+
+// isLoginWall reports whether the portal served the login page instead of the
+// requested one. data.go.kr answers an expired session with HTTP 200 and this
+// page rather than a redirect or 401, so every authenticated read has to check
+// for it — otherwise the caller mistakes "logged out" for "page changed".
+func isLoginWall(html, loc string) bool {
+	if strings.Contains(loc, "common-login") || strings.Contains(loc, "auth.data.go.kr") {
+		return true
+	}
+	return strings.Contains(html, "통합 로그인") || strings.Contains(html, "로그인 중 입니다")
 }
 
 // probeOnce opens a disposable tab, probes the 활용신청 현황 page with a hard

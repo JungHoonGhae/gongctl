@@ -3,6 +3,8 @@ package portal
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -25,16 +27,24 @@ func APIKey(ctx context.Context) (string, error) {
 	// browser fallback is also unavailable.
 	var sessErr error
 	if sess, err := loadSession(); err == nil {
-		html, herr := getWithSession(ctx, sess, APIKeyListPath)
+		html, herr := getAuthed(ctx, sess, APIKeyListPath)
 		if herr != nil {
-			sessErr = fmt.Errorf("세션으로 인증키 페이지를 받지 못했습니다: %w", herr)
+			sessErr = herr
 		} else if key, kerr := parseAPIKey(html); kerr != nil {
 			sessErr = kerr
 		} else {
+			cacheKey(key)
 			return key, nil
 		}
 	} else {
 		sessErr = err
+	}
+
+	// The key outlives the browser session by years (see 만료예정일 in
+	// list_applications), so a cached one keeps call working after the session
+	// expires — only apply/applications actually need a live session.
+	if key := cachedKey(); key != "" {
+		return key, nil
 	}
 
 	st, err := loadState()
@@ -45,7 +55,34 @@ func APIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parseAPIKey(html)
+	key, err := parseAPIKey(html)
+	if err == nil {
+		cacheKey(key)
+	}
+	return key, err
+}
+
+// keyCacheFile stores the account serviceKey so calls survive session expiry.
+const keyCacheFile = "datagokr-apikey"
+
+func cacheKey(key string) {
+	dir, err := configDir()
+	if err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(dir, keyCacheFile), []byte(key), 0o600) // credential
+}
+
+func cachedKey() string {
+	dir, err := configDir()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(dir, keyCacheFile))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // parseAPIKey pulls the active key out of the 인증키 발급현황 page.
