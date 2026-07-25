@@ -5,6 +5,24 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.1.1]
+
+### Fixed
+
+- **`logout` now removes the Chrome profiles**, not only the stored cookies and
+  cached serviceKey. The login profile accumulates the cookies of whatever the
+  human logged in *with* — an SSO provider's session, some of them persistent —
+  and the headless profile holds the session gongctl injected. Leaving those
+  behind after an explicit logout was the wrong boundary. Verified: 4.2 GB → 0 B,
+  no cookie database left under the config directory.
+- README's security section now states what is actually written to disk (with
+  permissions), what `logout` removes, and the risks that remain: the files are
+  `0600` but not encrypted; the local CDP port is reachable by other processes on
+  the same machine while `login`/`apply` runs; MCP `apply` creates real
+  applications without a human confirmation, so prompt injection through portal
+  text can produce unwanted ones (the CLI's y/N confirm is the safer path); and
+  the serviceKey is account-wide.
+
 ## [0.1.0]
 
 First release. A Go CLI + MCP server that automates data.go.kr (공공데이터포털)
