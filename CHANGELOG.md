@@ -5,6 +5,23 @@ All notable changes to gongctl are documented here. Format follows
 [SemVer](https://semver.org/). The release workflow uses the `## [X.Y.Z]`
 section matching a `vX.Y.Z` tag as the GitHub release notes.
 
+## [0.7.0]
+
+### Added
+
+- **`describe` hands over the publisher's address for LINK datasets** (`linkUrl`).
+  It previously said the spec lives on the publisher's site and the portal cannot
+  help, while the portal was displaying that very URL a row away — every LINK dataset
+  sampled (70/70) carries it. An agent that cannot get there guesses parameters
+  instead, so the address is now surfaced and named in the note.
+
+  gongctl does not follow it, and the note says why: the publishers are a long tail —
+  39 distinct hosts across 70 sampled datasets, the largest 13% — each with its own
+  registration, key and spec format. There is no single portal to support that would
+  unlock the LINK 40%. The note also states that gongctl's account key does not work
+  there, because "the spec is at this URL" otherwise reads as "and your key will
+  authorise it".
+
 ## [0.6.0]
 
 ### Added

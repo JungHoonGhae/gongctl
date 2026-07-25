@@ -26,6 +26,11 @@ const GuideDoc = `# gongctl — data.go.kr 사용 가이드
      approval 이 없으면 포털에 그 행이 없는 것이다(대개 LINK) — 자동승인이라고 가정하지 마라.
 4. **describe_api(pk)** — 상세기능·엔드포인트·요청변수를 surface. 파라미터는 여기서 확인해 구성한다.
    - params 가 비어 있고 rawHtml 만 있으면, 표 구조가 불확실하다는 뜻 — rawHtml 을 직접 읽어라.
+   - **svcType/apiType 이 LINK 면**: 포털에 명세가 없다. describe_api 가 주는 **linkUrl 을 직접
+     열어 읽어라**(WebFetch 등) — 명세는 제공기관 사이트에 있다. 표본 70건 전부 linkUrl 이 있었다.
+     단 제공기관 대부분이 별도 회원가입·별도 인증키를 요구하며, **gongctl 의 계정 인증키는 거기서
+     쓸 수 없다.** 즉 LINK 는 "명세를 읽는 것"까지는 되고 "로그인 1회로 호출"까지는 안 된다.
+     사람에게 그 사이트 가입이 필요하다고 알려라.
    - **operations 가 비어 있고 note 가 있으면**: 이 API 는 명세를 상세페이지에 싣지 않고 참고문서에만
      둔 경우다. guideDocUrl 을 직접 내려받아(zip/hwp/xlsx) 엔드포인트와 파라미터를 확인하라.
      **절대 파라미터를 추측해서 호출하지 마라** — 조용히 틀린 결과가 나온다.

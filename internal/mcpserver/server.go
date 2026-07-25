@@ -155,7 +155,7 @@ func New(deps Deps) *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "describe_api",
-		Description: "OpenAPI 상세(상세기능·엔드포인트·요청변수)를 surface 한다. params 가 비고 rawHtml 만 있으면 표 구조가 불확실하다는 뜻 — rawHtml 을 읽어라. operations 가 비고 note 가 있으면 명세가 참고문서에만 있는 API이므로 guideDocUrl 을 내려받아 읽어라 (파라미터 추측 금지).",
+		Description: "OpenAPI 상세(상세기능·엔드포인트·요청변수)를 surface 한다. params 가 비고 rawHtml 만 있으면 표 구조가 불확실하다는 뜻 — rawHtml 을 읽어라. apiType 이 LINK 면 linkUrl 을 직접 열어 읽어라(제공기관 사이트에 명세가 있고, 그곳은 별도 인증키를 요구한다). operations 가 비고 note 가 있으면 명세가 참고문서에만 있는 API이므로 guideDocUrl 을 내려받아 읽어라 (파라미터 추측 금지).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in describeIn) (*mcp.CallToolResult, *apicall.APISpec, error) {
 		spec, err := apicall.Describe(ctx, deps.Fetch, base, in.PK)
 		if err != nil {
