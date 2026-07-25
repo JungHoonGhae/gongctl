@@ -6,8 +6,10 @@ package apicall
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/JungHoonGhae/gongctl/internal/fetch"
@@ -21,8 +23,16 @@ type APISpec struct {
 	Operations   []Operation `json:"operations"`
 	GuideDoc     string      `json:"guideDoc,omitempty"`    // 참고문서 file name, NOT parsed
 	GuideDocURL  string      `json:"guideDocUrl,omitempty"` // where to fetch that file
-	// Note is set only when the page documents no operations, to say where the
-	// spec actually lives. Without it an empty Operations list is a dead end.
+	// APIType is the portal's own 'API 유형' field: REST means the page documents
+	// operations and request variables; LINK means the portal only points at the
+	// publisher's own site, so no spec exists here to read. Knowing which is
+	// which decides whether describe→call can be driven from this page at all.
+	APIType string `json:"apiType,omitempty"`
+	// EndpointOnly marks a spec whose endpoint was recovered from the page but
+	// whose request parameters the portal never documents.
+	EndpointOnly bool `json:"endpointOnly,omitempty"`
+	// Note is set only when the spec is incomplete, to say where the rest of it
+	// lives. Without it an empty Operations list is a dead end.
 	Note string `json:"note,omitempty"`
 }
 
@@ -72,9 +82,18 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 	// containers whenever the page has any, and only fall back to
 	// .open-api-detail for older/simpler single-operation pages that lack a
 	// separate result div.
+	// The portal embeds an authoritative Swagger 2.0 spec on modern pages; prefer
+	// it over scraping the rendered tables, which carry less and break more.
+	if ops := operationsFromSwagger(doc); len(ops) > 0 {
+		spec.Operations = ops
+	}
+
 	sections := doc.Find(".open-api-detail-result")
 	if sections.Length() == 0 {
 		sections = doc.Find(".open-api-detail")
+	}
+	if len(spec.Operations) > 0 {
+		sections = doc.Find("__none__") // swagger already answered; skip the tables
 	}
 	sections.Each(func(_ int, sel *goquery.Selection) {
 		op := Operation{Name: cleanText(sel.Find("h4, .tit").First().Text())}
@@ -95,11 +114,35 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 		}
 	})
 
+	// Page-level endpoint fallback: many REST datasets carry the endpoint URL
+	// somewhere on the page while documenting no 요청변수 table at all. Surfacing
+	// the endpoint alone is still factual and gets a caller moving; the note below
+	// makes clear the parameters are NOT documented here.
+	if len(spec.Operations) == 0 {
+		if html, err := doc.Html(); err == nil {
+			if m := reEndpoint.FindString(html); m != "" {
+				spec.Operations = append(spec.Operations, Operation{Endpoint: m})
+				spec.EndpointOnly = true
+			}
+		}
+	}
+
 	// GuideDoc: the 참고문서 row. The file itself is never fetched or parsed here —
 	// but its download URL is surfaced, because the file name alone gives an agent
 	// nothing it can act on.
+	// API 유형 (REST / LINK / …) — the th/td pair in the summary table.
+	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
+		if strings.Contains(cleanText(th.Text()), "API 유형") {
+			spec.APIType = cleanText(th.NextFiltered("td").Text())
+			return false
+		}
+		return true
+	})
+
+	guideRowFound := false
 	doc.Find("th").EachWithBreak(func(_ int, th *goquery.Selection) bool {
 		if strings.Contains(th.Text(), "참고문서") {
+			guideRowFound = true
 			td := th.NextFiltered("td")
 			spec.GuideDoc = cleanText(td.Text())
 			if onclick, ok := td.Find("a[onclick]").First().Attr("onclick"); ok {
@@ -116,12 +159,29 @@ func Describe(ctx context.Context, f *fetch.Client, baseURL, pk string) (*APISpe
 	// Some datasets document the whole spec in the attached guide document and
 	// leave the page itself empty. Say so, rather than handing back an empty list
 	// that reads as "this API has no operations".
-	if len(spec.Operations) == 0 {
+	if spec.EndpointOnly {
+		spec.Note = "엔드포인트는 페이지에서 확인했지만 요청변수(파라미터) 표가 없습니다 — " +
+			"파라미터는 포털에 문서화돼 있지 않습니다. guideDocUrl 이 있으면 그 문서를, 없으면 " +
+			"제공기관 문서를 확인하세요. 파라미터를 추측해서 호출하지 마세요."
+	} else if len(spec.Operations) == 0 {
 		spec.Note = "이 페이지에는 상세기능·요청변수 표가 없습니다 — 명세가 참고문서(guideDocUrl)에만 있는 API입니다. " +
 			"guideDocUrl 을 내려받아 읽고 엔드포인트·파라미터를 확인하세요. 파라미터를 추측해 호출하지 마세요."
 		if spec.GuideDocURL == "" {
-			spec.Note = "이 페이지에서 상세기능·요청변수를 찾지 못했고 참고문서 링크도 없습니다 — " +
-				"페이지 구조가 바뀐 것일 수 있습니다 (gongctl doctor 로 확인). 파라미터를 추측하지 마세요."
+			// A 참고문서 row that carries no file (fn_fileDownload('','')) is the
+			// portal saying "no document" — distinct from the row being absent,
+			// which would suggest the page layout changed.
+			if strings.Contains(spec.APIType, "LINK") {
+				spec.Note = "이 API 는 유형이 LINK 입니다 — 포털은 명세를 싣지 않고 제공기관 사이트로 " +
+					"연결만 합니다. 엔드포인트·파라미터는 제공기관 문서에서 확인해야 하며, 포털에서는 " +
+					"알 수 없습니다. 추측해서 호출하지 마세요."
+			} else if guideRowFound {
+				spec.Note = "이 API 는 포털에 명세가 없습니다 — 상세기능·요청변수 표도, 참고문서 파일도 " +
+					"제공되지 않습니다(참고문서 항목이 비어 있음). 엔드포인트와 파라미터를 알 방법이 " +
+					"포털에 없으니 제공기관에 문의하거나 다른 API 를 쓰세요. 추측해서 호출하지 마세요."
+			} else {
+				spec.Note = "이 페이지에서 상세기능·요청변수와 참고문서 항목 자체를 찾지 못했습니다 — " +
+					"페이지 구조가 바뀐 것일 수 있습니다 (gongctl doctor 로 확인). 파라미터를 추측하지 마세요."
+			}
 		}
 	}
 
@@ -209,3 +269,104 @@ func colIndex(headers map[string]int, key string) (int, bool) {
 }
 
 func cleanText(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// reSwaggerJSON pulls the embedded spec out of the page's
+// `var swaggerJson = \`{…}\`;` template literal.
+var reSwaggerJSON = regexp.MustCompile("(?s)swaggerJson\\s*=\\s*`(.*?)`")
+
+// swaggerDoc is the slice of Swagger 2.0 gongctl reads. Parameters sit at the
+// PATH level on data.go.kr's specs, not under the operation, so both are read.
+type swaggerDoc struct {
+	Host     string   `json:"host"`
+	BasePath string   `json:"basePath"`
+	Schemes  []string `json:"schemes"`
+	Paths    map[string]struct {
+		Parameters []swaggerParam `json:"parameters"`
+		Get        *swaggerOp     `json:"get"`
+		Post       *swaggerOp     `json:"post"`
+	} `json:"paths"`
+}
+
+type swaggerOp struct {
+	Summary     string         `json:"summary"`
+	Description string         `json:"description"`
+	OperationID string         `json:"operationId"`
+	Parameters  []swaggerParam `json:"parameters"`
+}
+
+type swaggerParam struct {
+	Name        string `json:"name"`
+	In          string `json:"in"`
+	Required    bool   `json:"required"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Example     any    `json:"example"`
+}
+
+// operationsFromSwagger reads the embedded Swagger spec, if the page carries one.
+// This is the authoritative source — the HTML tables are a fallback for pages
+// that predate it. Returns nil when there is no spec to read.
+func operationsFromSwagger(doc *goquery.Document) []Operation {
+	var raw string
+	doc.Find("script").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		if m := reSwaggerJSON.FindStringSubmatch(s.Text()); m != nil {
+			raw = m[1]
+			return false
+		}
+		return true
+	})
+	if raw == "" {
+		return nil
+	}
+	var sd swaggerDoc
+	if err := json.Unmarshal([]byte(raw), &sd); err != nil || sd.Host == "" {
+		return nil
+	}
+	scheme := "https"
+	for _, s := range sd.Schemes {
+		if s == "https" {
+			scheme = s
+			break
+		}
+		scheme = s
+	}
+	var ops []Operation
+	for path, item := range sd.Paths {
+		op := item.Get
+		if op == nil {
+			op = item.Post
+		}
+		if op == nil {
+			continue
+		}
+		name := op.Summary
+		if name == "" {
+			name = op.OperationID
+		}
+		// Path-level parameters first, then any the operation adds.
+		params := append(append([]swaggerParam{}, item.Parameters...), op.Parameters...)
+		o := Operation{
+			Name:     cleanText(name),
+			Endpoint: scheme + "://" + strings.TrimRight(sd.Host, "/") + sd.BasePath + path,
+		}
+		for _, p := range params {
+			req := "옵션"
+			if p.Required {
+				req = "필수"
+			}
+			sample := ""
+			if p.Example != nil {
+				sample = cleanText(fmt.Sprint(p.Example))
+			}
+			o.Params = append(o.Params, Param{
+				Name:     p.Name,
+				Required: req,
+				Sample:   sample,
+				Desc:     cleanText(p.Description),
+			})
+		}
+		ops = append(ops, o)
+	}
+	sort.Slice(ops, func(i, j int) bool { return ops[i].Endpoint < ops[j].Endpoint })
+	return ops
+}

@@ -127,3 +127,63 @@ func TestDescribeNoNoteWhenOperationsFound(t *testing.T) {
 		t.Errorf("note should be empty when operations exist, got %q", spec.Note)
 	}
 }
+
+// The portal embeds the authoritative spec as Swagger 2.0 in a JS template
+// literal — endpoint, per-parameter name/required/description, the lot. Scraping
+// the HTML tables instead misses it entirely, which is how a fully documented API
+// came back looking undocumented.
+func TestDescribeReadsEmbeddedSwagger(t *testing.T) {
+	body, err := os.ReadFile("testdata/openapi-swagger.html")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.Write(body)
+	}))
+	defer srv.Close()
+
+	spec, err := Describe(context.Background(), fetch.New(fetch.WithDelay(0)), srv.URL, "15127057")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if len(spec.Operations) != 1 {
+		t.Fatalf("want 1 operation from swagger, got %d", len(spec.Operations))
+	}
+	op := spec.Operations[0]
+	if !strings.Contains(op.Endpoint, "apis.data.go.kr/1130000/ClslVioltDtl_2Service/getClslVioltDetailInfo_2") {
+		t.Errorf("endpoint = %q, want host+path assembled from swagger", op.Endpoint)
+	}
+	if op.Name == "" {
+		t.Error("operation name (swagger summary) missing")
+	}
+	if len(op.Params) < 8 {
+		t.Fatalf("want the 8 documented params, got %d", len(op.Params))
+	}
+	var svcKey, bzmn *Param
+	for i := range op.Params {
+		switch op.Params[i].Name {
+		case "serviceKey":
+			svcKey = &op.Params[i]
+		case "bzmnNm":
+			bzmn = &op.Params[i]
+		}
+	}
+	if svcKey == nil || bzmn == nil {
+		t.Fatal("expected serviceKey and bzmnNm among params")
+	}
+	if svcKey.Required != "필수" {
+		t.Errorf("serviceKey required = %q, want 필수", svcKey.Required)
+	}
+	if bzmn.Required != "옵션" {
+		t.Errorf("bzmnNm required = %q, want 옵션", bzmn.Required)
+	}
+	if bzmn.Desc == "" {
+		t.Error("param description not carried over")
+	}
+	// A spec this complete must not be flagged as endpoint-only or noted as missing.
+	if spec.EndpointOnly || spec.Note != "" {
+		t.Errorf("complete swagger spec should carry no note; got endpointOnly=%v note=%q",
+			spec.EndpointOnly, spec.Note)
+	}
+}
