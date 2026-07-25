@@ -43,10 +43,12 @@ type catalogIn struct {
 	Limit int    `json:"limit,omitempty" jsonschema:"max rows to return (default 20) — keep it small, the total match count comes back separately"`
 }
 type catalogOut struct {
-	Total    int           `json:"total"`    // matches found
-	Shown    int           `json:"shown"`    // rows returned
-	SyncedAt string        `json:"syncedAt"` // when the catalogue was built
-	Stale    bool          `json:"stale"`    // true = re-sync, results may be incomplete
+	Terms    []string      `json:"terms"`             // what the query was reduced to
+	Relaxed  bool          `json:"relaxed,omitempty"` // true = no entry had every term, so any-term matches are shown
+	Total    int           `json:"total"`             // matches found
+	Shown    int           `json:"shown"`             // rows returned
+	SyncedAt string        `json:"syncedAt"`          // when the catalogue was built
+	Stale    bool          `json:"stale"`             // true = re-sync, results may be incomplete
 	Hits     []catalog.Hit `json:"hits"`
 }
 type keyOut struct {
@@ -89,18 +91,24 @@ func New(deps Deps) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "catalog_search",
 		Description: "로컬 카탈로그에서 어떤 API 가 존재하는지 찾는다. 포털 검색과 달리 전체 목록을 한 번에 " +
-			"훑으므로 '이런 데이터가 있나?'를 키워드를 추측해가며 여러 번 물을 필요가 없다. 결과는 활용신청 " +
-			"많은 순(=실제로 쓰이는 순)이고, 설명문은 반환하지 않는다(컨텍스트 절약). 데이터 탐색은 이 도구로 " +
-			"시작하라. stale=true 면 스냅샷이 오래된 것이므로 최근 신설 API 가 누락될 수 있다. " +
+			"훑으므로 '이런 데이터가 있나?'를 키워드를 추측해가며 여러 번 물을 필요가 없다. " +
+			"query 는 자연어로 그대로 써도 된다('폭염에 취약한 고령자'처럼) — 조사와 불필요한 말은 " +
+			"알아서 걸러진다. 결과는 활용신청 많은 순(=실제로 쓰이는 순)이고, 설명문은 반환하지 않는다" +
+			"(컨텍스트 절약). 데이터 탐색은 이 도구로 시작하라. " +
+			"relaxed=true 면 모든 단어를 포함하는 데이터가 없어 일부만 일치하는 것까지 보여준 것이므로 " +
+			"matched 가 낮은 결과는 무관할 수 있다. terms 로 실제 검색된 단어를 확인하라. " +
+			"stale=true 면 스냅샷이 오래되어 최근 신설 API 가 누락될 수 있다. " +
 			"카탈로그가 없으면 사람에게 `gongctl catalog sync` 를 안내하라.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in catalogIn) (*mcp.CallToolResult, *catalogOut, error) {
 		cat, err := catalog.Load()
 		if err != nil {
 			return errResult(err.Error()), nil, nil
 		}
-		hits, total := cat.Search(in.Query, in.Limit)
+		res := cat.Search(in.Query, in.Limit)
+		hits := res.Hits
 		return nil, &catalogOut{
-			Total: total, Shown: len(hits),
+			Terms: res.Terms, Relaxed: res.Relaxed,
+			Total: res.Total, Shown: len(hits),
 			SyncedAt: cat.SyncedAt.Format("2006-01-02"), Stale: cat.Stale(),
 			Hits: hits,
 		}, nil

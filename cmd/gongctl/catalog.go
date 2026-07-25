@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JungHoonGhae/gongctl/internal/catalog"
@@ -81,15 +82,22 @@ func catalogSearchCmd() *cobra.Command {
 				}
 				q += a
 			}
-			hits, total := cat.Search(q, limit)
+			res := cat.Search(q, limit)
+			hits, total := res.Hits, res.Total
 			if format != output.Table {
 				return output.WriteJSON(cmd.OutOrStdout(), map[string]any{
+					"terms": res.Terms, "relaxed": res.Relaxed,
 					"total": total, "shown": len(hits), "hits": hits,
 				})
 			}
 			if total == 0 {
 				fmt.Fprintln(cmd.ErrOrStderr(), "일치하는 데이터가 없습니다.")
 				return nil
+			}
+			if res.Relaxed {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"모든 단어를 포함하는 결과가 없어 일부만 일치하는 것까지 보여줍니다 (검색어: %s)\n\n",
+					strings.Join(res.Terms, " "))
 			}
 			headers := []string{"pk", "활용신청", "수정일", "제공기관", "데이터명"}
 			rows := make([][]string, 0, len(hits))
